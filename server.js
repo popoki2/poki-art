@@ -8,48 +8,35 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Body 파서 설정
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 기본 제시어 데이터베이스 (카테고리별)
-let wordDatabase = {
-    food: ["떡볶이", "초밥", "마라탕", "붕어빵", "파스타", "짜장면", "탕수육", "치킨"],
-    anime: ["피카츄", "도라에몽", "하츠네미쿠", "귀멸의칼날", "원피스", "슬램덩크", "건담"],
-    daily: ["시계", "세탁기", "포크레인", "안경", "우산", "자전거", "냉장고", "선풍기"],
-    meme: ["중꺾마", "엄준식", "엄", "밈", "어쩔티비", "무야호", "세트"]
+// ==========================================
+// 🎯 [제시어 관리자 코너] 여기서 자유롭게 단어를 추가/수정하세요!
+// ==========================================
+const wordDatabase = {
+    all: [], // 전체 통합 카테고리 (자동 생성)
+    food: ["떡볶이", "계란볶음밥", "마라샹궈", "붕어빵", "파스타", "짜장면", "탕수육", "치킨", "피자", "삼겹살", "라면", "돈까스", "라멘", "냉면", "육개장사발면", "단무지", "피자호빵", "피카츄돈가스", "돈까스", "오징어회", "막국수", "돼지게티" "처갓집양념치킨", "뼈찜", "감자탕", "햇반", "순대국밥", "삼겹숙주볶음", "타코야끼", "오꼬노미야끼"],
+    anime: ["포켓몬스터", "도라에몽", "하츠네미쿠", "귀멸의칼날", "원피스", "슬램덩크", "건담", "짱구", "보노보노", "스파이패밀리" "뱅드림", "일곱개의대죄", "블랙클로버", "짱구는못말려", "나루토", "블리치", "리제로부터시작하는이세계생활", "러브라이브", "아이돌마스터", "언젠가천마의검은토끼", "백화요란사무라이걸즈", "주술회전", "블루록" "전생했더니슬라임이었던건에대하여", "약사의혼잣말", "천원돌파그렌라간" "코드기어스" "케이온" "봇치더록" "소드아트온라인"],
+    daily: ["시계", "세탁기", "아이패드", "안경", "우산", "자전거", "냉장고", "선풍기", "지갑", "휴지", "노트북" "키보드", "손거울", "하이볼", "물컵", "하츠네미쿠인형", "마일드세븐", "전자담배", "물티슈", "롤휴지", "아이코스", "포크레인",],
+    meme: ["중꺾마", "하츠네미쿠", "럭스아나", "에반데", "엄", "어쩔티비", "무야호", "세트", "시진핑", "이용재", "권용빈", "장기석", "오래와라", "권용빈", "오징어게임", "엄준식" "봄동비빔밥", "운동많이된다", "감옥에서누가돌아왔게", "홍명보", "싸워", "하이닉스", "두쫀쿠", "모시모시", "거제야호", "후덕죽", "아기맹수", "지금이니", "팔협지", "쉬었음청년" "예아" "이궈궈던", "하입보이", "실패작소녀", "장충동왕족발보쌈"]
 };
+// 전체 카테고리 데이터 합치기
+wordDatabase.all = [...wordDatabase.food, ...wordDatabase.anime, ...wordDatabase.daily, ...wordDatabase.meme];
 
-// 방 관리 객체
 const rooms = {};
 
-// 📌 [수정 핵심] 어떤 주소로 들어오든 404/Not Found 없이 무조건 메인 게임 HTML을 응답하도록 보장!
+// 모든 요청에 대해 웹 앱 전송
 app.get('*', (req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(getHTMLContent());
 });
 
-// 관리자 제시어 추가 API (비밀번호: poki1234)
-app.post('/api/add-word', (req, res) => {
-    const { password, category, word } = req.body;
-    if (password !== 'poki1234') {
-        return res.status(403).json({ success: false, message: '비밀번호가 틀렸습니다!' });
-    }
-    if (!wordDatabase[category]) {
-        wordDatabase[category] = [];
-    }
-    if (!wordDatabase[category].includes(word)) {
-        wordDatabase[category].push(word);
-    }
-    res.json({ success: true, message: `'${word}' 제시어가 [${category}] 카테고리에 추가되었습니다!`, db: wordDatabase });
-});
-
-// Socket.IO 실시간 이벤트 처리
 io.on('connection', (socket) => {
     let currentRoom = null;
     let username = '';
 
-    socket.on('joinRoom', ({ roomId, name }) => {
+    socket.on('joinRoom', ({ roomId, name, category, avatar }) => {
         currentRoom = roomId || 'POKI_ROOM';
         username = name || '무명포키';
 
@@ -58,22 +45,26 @@ io.on('connection', (socket) => {
         if (!rooms[currentRoom]) {
             rooms[currentRoom] = {
                 id: currentRoom,
+                category: category || 'all',
                 players: [],
-                drawerIndex: 0,
+                drawerIndex: -1,
                 currentWord: '',
                 timer: null,
                 timeLeft: 60,
-                isPlaying: false
+                isPlaying: false,
+                currentRound: 0,
+                maxRounds: 3
             };
         }
 
         const room = rooms[currentRoom];
-        const player = { id: socket.id, name: username, score: 0 };
+        const player = { id: socket.id, name: username, score: 0, avatar: avatar || { bg: '#ff007f', face: '◕‿◕' } };
         room.players.push(player);
 
         io.to(currentRoom).emit('updatePlayers', room.players);
         io.to(currentRoom).emit('chatMessage', { sender: 'SYSTEM', text: `${username} 님이 입장하셨습니다! ♡` });
 
+        // 2명 이상이고 게임 미진행 중이면 게임 시작
         if (room.players.length >= 2 && !room.isPlaying) {
             startGame(currentRoom);
         }
@@ -91,14 +82,30 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('fillCanvas', (color) => {
+        if (currentRoom) {
+            io.to(currentRoom).emit('fillCanvas', color);
+        }
+    });
+
     socket.on('chatMessage', (msg) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
+        const drawer = room.players[room.drawerIndex];
 
+        // 🛑 출제자는 채팅 금지 (정답 유출 및 자가 득점 방지)
+        if (room.isPlaying && drawer && drawer.id === socket.id) {
+            socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 출제 중에는 채팅을 입력할 수 없습니다!' });
+            return;
+        }
+
+        // 정답 판정
         if (room.isPlaying && msg.trim() === room.currentWord) {
             const player = room.players.find(p => p.id === socket.id);
             if (player) {
                 player.score += 150;
+                if (drawer) drawer.score += 50; // 출제자도 맞히면 보너스 점수
+
                 io.to(currentRoom).emit('updatePlayers', room.players);
                 io.to(currentRoom).emit('chatMessage', { 
                     sender: 'SYSTEM', 
@@ -145,7 +152,8 @@ function startGame(roomId) {
     const room = rooms[roomId];
     if (!room) return;
     room.isPlaying = true;
-    room.drawerIndex = 0;
+    room.currentRound = 1;
+    room.drawerIndex = -1;
     nextTurn(roomId);
 }
 
@@ -155,21 +163,38 @@ function nextTurn(roomId) {
 
     clearInterval(room.timer);
 
-    room.drawerIndex = (room.drawerIndex + 1) % room.players.length;
-    const drawer = room.players[room.drawerIndex];
+    room.drawerIndex++;
+    
+    // 한 라운드 종료 체크
+    if (room.drawerIndex >= room.players.length) {
+        room.drawerIndex = 0;
+        room.currentRound++;
+    }
 
-    const allWords = Object.values(wordDatabase).flat();
-    room.currentWord = allWords[Math.floor(Math.random() * allWords.length)];
+    // 설정된 총 라운드 종료 시 게임 최종 완료 (시상식)
+    if (room.currentRound > room.maxRounds) {
+        room.isPlaying = false;
+        const sortedPlayers = [...room.players].sort((a, b) => b.score - a.score);
+        io.to(roomId).emit('gameOver', sortedPlayers);
+        return;
+    }
+
+    const drawer = room.players[room.drawerIndex];
+    const categoryList = wordDatabase[room.category] || wordDatabase.all;
+    room.currentWord = categoryList[Math.floor(Math.random() * categoryList.length)];
     room.timeLeft = 60;
 
     io.to(roomId).emit('clearCanvas');
 
     room.players.forEach(p => {
-        if (p.id === drawer.id) {
-            io.to(p.id).emit('turnStart', { isDrawer: true, word: room.currentWord, drawerName: drawer.name });
-        } else {
-            io.to(p.id).emit('turnStart', { isDrawer: false, word: '???', drawerName: drawer.name });
-        }
+        const isDrawer = (p.id === drawer.id);
+        io.to(p.id).emit('turnStart', { 
+            isDrawer, 
+            word: isDrawer ? room.currentWord : '???', 
+            drawerName: drawer.name,
+            round: room.currentRound,
+            maxRounds: room.maxRounds
+        });
     });
 
     room.timer = setInterval(() => {
@@ -183,7 +208,7 @@ function nextTurn(roomId) {
 
         if (room.timeLeft <= 0) {
             clearInterval(room.timer);
-            io.to(roomId).emit('chatMessage', { sender: 'SYSTEM', text: `시간 초과! 정답은 [ ${room.currentWord} ] 이었습니다.` });
+            io.to(roomId).emit('chatMessage', { sender: 'SYSTEM', text: `⏰ 시간 초과! 정답은 [ ${room.currentWord} ] 이었습니다.` });
             setTimeout(() => nextTurn(roomId), 3000);
         }
     }, 1000);
@@ -198,148 +223,178 @@ function getHTMLContent() {
     <title>ポキアト！！ (poki art ! !)</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=DungGeunMo&display=swap');
-        * { box-sizing: border-box; font-family: 'DungGeunMo', monospace; user-select: none; }
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700;900&display=swap');
+        * { box-sizing: border-box; font-family: 'Noto Sans KR', '맑은 고딕', sans-serif; user-select: none; }
         body {
             margin: 0; padding: 15px;
-            background: #18052e;
-            background-image: linear-gradient(0deg, rgba(255, 0, 128, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 0, 128, 0.08) 1px, transparent 1px);
-            background-size: 20px 20px;
+            background: #120323;
+            background-image: linear-gradient(0deg, rgba(255, 0, 128, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 0, 128, 0.1) 1px, transparent 1px);
+            background-size: 24px 24px;
             color: #fff; display: flex; flex-direction: column; align-items: center; min-height: 100vh;
         }
         .window {
-            background: #2a0845; border: 2px solid #ff007f;
-            box-shadow: 0 0 12px #ff007f, inset 0 0 8px rgba(0,255,255,0.3);
-            border-radius: 8px; margin: 6px; overflow: hidden;
+            background: #220738; border: 2px solid #ff007f;
+            box-shadow: 0 0 14px rgba(255, 0, 128, 0.6), inset 0 0 10px rgba(0,255,255,0.2);
+            border-radius: 10px; margin: 4px; overflow: hidden;
         }
         .window-header {
             background: linear-gradient(90deg, #ff007f, #7928ca);
-            padding: 6px 12px; font-weight: bold; display: flex; justify-content: space-between; align-items: center;
-            text-shadow: 0 0 5px #fff;
+            padding: 8px 14px; font-weight: 700; display: flex; justify-content: space-between; align-items: center;
+            text-shadow: 0 0 4px rgba(0,0,0,0.6);
         }
         .window-body { padding: 10px; }
         
-        #top-bar { width: 100%; max-width: 1050px; display: flex; justify-content: space-between; }
-        .logo { font-size: 24px; color: #00ffff; text-shadow: 0 0 10px #00ffff, 0 0 20px #ff007f; }
+        #top-bar { width: 100%; max-width: 1050px; }
+        .logo { font-size: 22px; font-weight: 900; color: #00ffff; text-shadow: 0 0 10px #00ffff; }
         
-        #main-container { width: 100%; max-width: 1050px; display: flex; gap: 10px; margin-top: 10px; }
-        #left-panel { width: 200px; }
+        /* 📌 1. 제시어 눈에 띄게 시선 집중 */
+        .word-box {
+            background: #000; border: 2px solid #00ffff; padding: 4px 16px; border-radius: 20px;
+            color: #ffff00; font-size: 22px; font-weight: 900; text-shadow: 0 0 8px #ffff00;
+        }
+
+        #main-container { width: 100%; max-width: 1050px; display: flex; gap: 10px; margin-top: 8px; }
+        #left-panel { width: 220px; }
         #center-panel { flex: 1; display: flex; flex-direction: column; align-items: center; }
-        #right-panel { width: 260px; }
+        #right-panel { width: 270px; }
         
         .player-card {
-            background: #150228; border: 1px solid #00ffff; padding: 8px; margin-bottom: 6px;
-            border-radius: 4px; display: flex; justify-content: space-between; align-items: center;
-            box-shadow: 0 0 5px #00ffff;
+            background: #120224; border: 1px solid #00ffff; padding: 6px 10px; margin-bottom: 6px;
+            border-radius: 6px; display: flex; align-items: center; gap: 8px;
+            box-shadow: 0 0 6px rgba(0,255,255,0.3);
+        }
+        .avatar-icon {
+            width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-size: 11px; font-weight: bold; color: #fff; border: 1px solid #fff;
         }
 
         canvas {
-            background: #ffffff; border: 3px solid #00ffff; border-radius: 6px;
-            box-shadow: 0 0 15px #00ffff; cursor: crosshair; touch-action: none;
+            background: #ffffff; border: 3px solid #00ffff; border-radius: 8px;
+            box-shadow: 0 0 18px rgba(0, 255, 255, 0.4); cursor: crosshair; touch-action: none;
         }
 
         #toolbar {
-            width: 100%; margin-top: 10px; display: flex; justify-content: space-between; align-items: center;
-            background: #220338; border: 1px solid #ff007f; padding: 8px; border-radius: 6px;
+            width: 100%; margin-top: 8px; display: flex; justify-content: space-between; align-items: center;
+            background: #1a032d; border: 1px solid #ff007f; padding: 8px; border-radius: 8px;
         }
-        .color-palette { display: flex; gap: 4px; flex-wrap: wrap; max-width: 280px; }
-        .color-btn { width: 22px; height: 22px; border-radius: 3px; border: 1px solid #fff; cursor: pointer; }
-        .color-btn:hover { transform: scale(1.15); }
+        .color-palette { display: flex; gap: 4px; flex-wrap: wrap; max-width: 250px; }
+        .color-btn { width: 20px; height: 20px; border-radius: 4px; border: 1px solid #fff; cursor: pointer; }
         
         #chat-messages {
-            height: 380px; background: #120120; border: 1px solid #ff007f; padding: 8px;
-            overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 4px;
+            height: 380px; background: #0a0114; border: 1px solid #ff007f; padding: 8px;
+            overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 4px; border-radius: 6px;
         }
         .chat-input-box { display: flex; gap: 4px; margin-top: 6px; }
-        input[type="text"] {
-            background: #080010; border: 1px solid #00ffff; color: #00ffff; padding: 6px;
-            border-radius: 4px; outline: none; width: 100%;
+        input[type="text"], select {
+            background: #080010; border: 1px solid #00ffff; color: #00ffff; padding: 8px;
+            border-radius: 6px; outline: none; font-weight: bold;
         }
         button {
-            background: linear-gradient(180deg, #ff007f, #a00050); border: none; color: #fff;
-            padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold;
-            box-shadow: 0 0 6px #ff007f;
+            background: linear-gradient(180deg, #ff007f, #b30059); border: none; color: #fff;
+            padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;
+            box-shadow: 0 0 8px #ff007f; transition: 0.1s;
         }
-        button:hover { filter: brightness(1.2); }
+        button:hover { filter: brightness(1.2); transform: scale(1.02); }
+        button:disabled { background: #444; box-shadow: none; cursor: not-allowed; }
 
         .modal {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 999;
         }
-        .modal-content { width: 320px; text-align: center; }
+        .modal-content { width: 360px; text-align: center; }
     </style>
 </head>
 <body>
 
+    <!-- 📌 7. 바보 커스텀 아바타 & 방 카테고리 입장 모달 -->
     <div id="join-modal" class="modal">
         <div class="window modal-content">
-            <div class="window-header">ポキアト！！ 입장하기 ♡</div>
-            <div class="window-body">
-                <p style="color:#00ffff;">닉네임을 입력해 주세요!</p>
-                <input type="text" id="username-input" placeholder="닉네임..." value="친구포키" style="margin-bottom:12px;">
-                <button onclick="joinGame()" style="width:100%;">게임 접속하기 🚀</button>
+            <div class="window-header">ポキアト！！ 로비 입장 ♡</div>
+            <div class="window-body" style="display:flex; flex-direction:column; gap:10px;">
+                <!-- 아바타 커스텀 미리보기 -->
+                <div style="display:flex; justify-content:center; align-items:center; gap:10px;">
+                    <div id="avatar-preview" class="avatar-icon" style="width:50px; height:50px; font-size:16px;">(◕‿◕)</div>
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <button onclick="changeAvatarFace()">표정 변경 🤪</button>
+                        <button onclick="changeAvatarBg()">색상 변경 🎨</button>
+                    </div>
+                </div>
+
+                <input type="text" id="username-input" placeholder="닉네임 입력..." value="포키가이">
+                <input type="text" id="room-input" placeholder="방 코드 (예: POKI1)" value="POKI1">
+                
+                <select id="category-select">
+                    <option value="all">🎨 전체 카테고리</option>
+                    <option value="food">🍕 맛있는 음식</option>
+                    <option value="anime">⚡ 애니 / 게임</option>
+                    <option value="daily">🏠 일상 용품</option>
+                    <option value="meme">🔥 유행어 / 밈</option>
+                </select>
+
+                <button onclick="joinGame()" style="width:100%; margin-top:6px; font-size:16px;">게임 접속하기 🚀</button>
             </div>
         </div>
     </div>
 
-    <div id="top-bar" class="window">
-        <div class="window-header" style="width:100%;">
-            <span class="logo">ポキアト！！ (poki art ! !)</span>
-            <span>⏰ 남은시간: <span id="timer" style="color:#00ffff;">60</span>초</span>
-            <span>💡 제시어: <span id="word-display" style="color:#ff007f; font-size:18px;">대기 중...</span></span>
-            <button onclick="toggleAdminModal()" style="font-size:10px; background:#7928ca;">⚙️ 제시어 추가</button>
+    <!-- 📌 6. 최종 시상식 / 순위 결과 모달 -->
+    <div id="game-over-modal" class="modal" style="display:none;">
+        <div class="window modal-content" style="width:400px;">
+            <div class="window-header">🏆 최종 순위 발표 🏆</div>
+            <div class="window-body">
+                <div id="rankings-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
+                <button onclick="location.reload()" style="width:100%;">다시 하기 🔄</button>
+            </div>
         </div>
     </div>
 
+    <!-- 상단 대시보드 -->
+    <div id="top-bar" class="window">
+        <div class="window-header">
+            <span class="logo">ポキアト！！</span>
+            <span>ROUND <span id="round-display" style="color:#00ffff;">1</span>/<span id="max-round-display">3</span></span>
+            <span>⏰ <span id="timer" style="color:#00ffff;">60</span>s</span>
+            <div class="word-box">제시어: <span id="word-display">대기 중...</span></div>
+        </div>
+    </div>
+
+    <!-- 메인 컨테이너 -->
     <div id="main-container">
+        <!-- 왼쪽: 유저 목록 -->
         <div id="left-panel" class="window">
             <div class="window-header">♥ PLAYERS</div>
             <div class="window-body" id="player-list"></div>
         </div>
 
+        <!-- 중앙: 캔버스 및 툴바 -->
         <div id="center-panel">
             <div class="window" style="padding: 6px;">
-                <canvas id="canvas" width="540" height="420"></canvas>
+                <canvas id="canvas" width="520" height="400"></canvas>
             </div>
             
             <div id="toolbar">
                 <div class="color-palette" id="palette"></div>
-                <div style="display:flex; gap:6px; align-items:center;">
-                    <button onclick="setPenWidth(2)">•</button>
-                    <button onclick="setPenWidth(6)">●</button>
-                    <button onclick="setPenWidth(14)">🔴</button>
+                <!-- 📌 3. 굵기 옵션 강화 및 전체 채우기 버튼 -->
+                <div style="display:flex; gap:4px; align-items:center;">
+                    <button onclick="setPenWidth(2)" title="얇게">•</button>
+                    <button onclick="setPenWidth(6)" title="보통">●</button>
+                    <button onclick="setPenWidth(14)" title="굵게">🔴</button>
+                    <button onclick="setPenWidth(30)" title="왕붓">██</button>
+                    <button onclick="fillBucket()" style="background:#7928ca;">🪣 채우기</button>
                     <button onclick="useEraser()" style="background:#444;">지우개</button>
-                    <button onclick="clearCanvas()" style="background:#d32f2f;">전체 지우기</button>
+                    <button onclick="clearCanvas()" style="background:#d32f2f;">지우기</button>
                 </div>
             </div>
         </div>
 
+        <!-- 오른쪽: 채팅 / 정답 입력창 -->
         <div id="right-panel" class="window">
             <div class="window-header">♥ CHAT & ANSWER</div>
             <div class="window-body">
                 <div id="chat-messages"></div>
                 <div class="chat-input-box">
-                    <input type="text" id="chat-input" placeholder="정답 또는 채팅 입력..." onkeypress="if(event.key==='Enter') sendChat()">
-                    <button onclick="sendChat()">전송</button>
+                    <input type="text" id="chat-input" placeholder="정답 또는 채팅..." onkeypress="if(event.key==='Enter') sendChat()">
+                    <button id="send-btn" onclick="sendChat()">전송</button>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="admin-modal" class="modal" style="display:none;">
-        <div class="window modal-content">
-            <div class="window-header">⚙️ Custom Word Admin</div>
-            <div class="window-body" style="display:flex; flex-direction:column; gap:8px;">
-                <input type="password" id="admin-pass" placeholder="관리자 비밀번호 (poki1234)">
-                <select id="admin-category" style="background:#080010; color:#00ffff; padding:6px; border:1px solid #00ffff; border-radius:4px;">
-                    <option value="food">음식 (Food)</option>
-                    <option value="anime">애니/게임 (Anime)</option>
-                    <option value="daily">일상단어 (Daily)</option>
-                    <option value="meme">밈 (Meme)</option>
-                </select>
-                <input type="text" id="admin-word" placeholder="추가할 제시어 입력...">
-                <button onclick="submitCustomWord()">제시어 DB 추가하기</button>
-                <button onclick="toggleAdminModal()" style="background:#555;">닫기</button>
             </div>
         </div>
     </div>
@@ -348,8 +403,28 @@ function getHTMLContent() {
         const socket = io();
         let isDrawer = false;
         let currentColor = '#000000';
-        let currentWidth = 4;
+        let currentWidth = 6;
         let isDrawing = false;
+
+        // 아바타 커스텀 데이터
+        const faces = ['(◕‿◕)', '(˚Δ˚)', '(x_x)', '(•̀ᴗ•́)', '(qwq)', '(;¬_¬)', '(•ω•)'];
+        const avatarBgs = ['#ff007f', '#00ffff', '#7928ca', '#4caf50', '#ffeb3b', '#ff7700'];
+        let currentFaceIdx = 0;
+        let currentBgIdx = 0;
+
+        function changeAvatarFace() {
+            currentFaceIdx = (currentFaceIdx + 1) % faces.length;
+            updateAvatarPreview();
+        }
+        function changeAvatarBg() {
+            currentBgIdx = (currentBgIdx + 1) % avatarBgs.length;
+            updateAvatarPreview();
+        }
+        function updateAvatarPreview() {
+            const preview = document.getElementById('avatar-preview');
+            preview.innerText = faces[currentFaceIdx];
+            preview.style.background = avatarBgs[currentBgIdx];
+        }
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
@@ -357,7 +432,7 @@ function getHTMLContent() {
         const colors = [
             '#000000', '#ffffff', '#ff007f', '#00ffff', '#7928ca', '#ff0000', 
             '#ff7700', '#ffeb3b', '#4caf50', '#2196f3', '#9c27b0', '#e91e63',
-            '#ffb6c1', '#a8e6cf', '#dcedc1', '#ffd3b6', '#ff8b94', '#845ec2', '#d65db1', '#ff6f91'
+            '#ffb6c1', '#a8e6cf', '#dcedc1', '#ffd3b6', '#ff8b94', '#845ec2'
         ];
         const paletteContainer = document.getElementById('palette');
         colors.forEach(c => {
@@ -394,7 +469,6 @@ function getHTMLContent() {
         }
 
         function stopDrawing() { isDrawing = false; }
-
         function getCanvasPos(e) {
             const rect = canvas.getBoundingClientRect();
             return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -403,6 +477,14 @@ function getHTMLContent() {
         function setPenWidth(w) { currentWidth = w; }
         function useEraser() { currentColor = '#ffffff'; }
         function clearCanvas() { if (isDrawer) socket.emit('clearCanvas'); }
+        
+        // 📌 모두 채우기 (Bucket Fill)
+        function fillBucket() {
+            if (!isDrawer) return;
+            ctx.fillStyle = currentColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            socket.emit('fillCanvas', currentColor);
+        }
 
         socket.on('draw', (data) => {
             if (data.type === 'start') {
@@ -417,8 +499,10 @@ function getHTMLContent() {
             }
         });
 
-        socket.on('clearCanvas', () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        socket.on('clearCanvas', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
+        socket.on('fillCanvas', (color) => {
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         });
 
         socket.on('updatePlayers', (players) => {
@@ -427,7 +511,13 @@ function getHTMLContent() {
             players.forEach(p => {
                 const card = document.createElement('div');
                 card.className = 'player-card';
-                card.innerHTML = \`<span>\${p.name}</span> <span style="color:#00ffff;">\${p.score}pt</span>\`;
+                card.innerHTML = \`
+                    <div class="avatar-icon" style="background:\${p.avatar.bg};">\${p.avatar.face}</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:bold; font-size:13px;">\${p.name}</div>
+                        <div style="color:#00ffff; font-size:12px;">\${p.score} pt</div>
+                    </div>
+                \`;
                 list.appendChild(card);
             });
         });
@@ -435,15 +525,51 @@ function getHTMLContent() {
         socket.on('turnStart', (data) => {
             isDrawer = data.isDrawer;
             document.getElementById('word-display').innerText = data.word;
-            addChatMessage({ sender: 'SYSTEM', text: \`🎨 [출제자]: \${data.drawerName} 님이 그림을 그릴 차례입니다!\` });
+            document.getElementById('round-display').innerText = data.round;
+            document.getElementById('max-round-display').innerText = data.maxRounds;
+
+            // 📌 4. 출제자는 채팅 금지 처리
+            const chatInput = document.getElementById('chat-input');
+            const sendBtn = document.getElementById('send-btn');
+            if (isDrawer) {
+                chatInput.disabled = true;
+                sendBtn.disabled = true;
+                chatInput.placeholder = "🎨 지금은 그림을 그리는 중입니다...";
+            } else {
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+                chatInput.placeholder = "정답 또는 채팅 입력...";
+            }
+
+            addChatMessage({ sender: 'SYSTEM', text: \`🎨 [출제자]: \${data.drawerName} 님의 턴입니다!\` });
         });
 
         socket.on('timerUpdate', (time) => {
             document.getElementById('timer').innerText = time;
         });
 
-        socket.on('chatMessage', (data) => {
-            addChatMessage(data);
+        socket.on('chatMessage', (data) => addChatMessage(data));
+
+        // 📌 6. 게임 종료 시 최종 순위 모달 띄우기
+        socket.on('gameOver', (rankings) => {
+            const modal = document.getElementById('game-over-modal');
+            const list = document.getElementById('rankings-list');
+            list.innerHTML = '';
+            
+            rankings.forEach((p, idx) => {
+                const item = document.createElement('div');
+                item.className = 'player-card';
+                item.style.border = idx === 0 ? '2px solid #ffff00' : '1px solid #00ffff';
+                item.innerHTML = \`
+                    <span style="font-size:18px; font-weight:bold; width:30px;">\${idx + 1}위</span>
+                    <div class="avatar-icon" style="background:\${p.avatar.bg};">\${p.avatar.face}</div>
+                    <span style="flex:1; font-weight:bold;">\${p.name}</span>
+                    <span style="color:#ffff00; font-weight:bold;">\${p.score} 점</span>
+                \`;
+                list.appendChild(item);
+            });
+
+            modal.style.display = 'flex';
         });
 
         function addChatMessage(data) {
@@ -470,35 +596,14 @@ function getHTMLContent() {
 
         function joinGame() {
             const name = document.getElementById('username-input').value.trim();
+            const roomId = document.getElementById('room-input').value.trim();
+            const category = document.getElementById('category-select').value;
+            const avatar = { bg: avatarBgs[currentBgIdx], face: faces[currentFaceIdx] };
+
             if (name) {
-                socket.emit('joinRoom', { roomId: 'POKI_ROOM', name });
+                socket.emit('joinRoom', { roomId, name, category, avatar });
                 document.getElementById('join-modal').style.display = 'none';
             }
-        }
-
-        function toggleAdminModal() {
-            const modal = document.getElementById('admin-modal');
-            modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
-        }
-
-        function submitCustomWord() {
-            const password = document.getElementById('admin-pass').value;
-            const category = document.getElementById('admin-category').value;
-            const word = document.getElementById('admin-word').value.trim();
-
-            fetch('/api/add-word', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password, category, word })
-            })
-            .then(res => res.json())
-            .then(data => {
-                alert(data.message);
-                if (data.success) {
-                    document.getElementById('admin-word').value = '';
-                    toggleAdminModal();
-                }
-            });
         }
     </script>
 </body>
@@ -507,6 +612,6 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` ポキアト！！ (poki art ! !) 게임 서버 가동 완료!`);
+    console.log(` ポキアト！！ (poki art ! !) 최종 배포 서버 가동 완료!`);
     console.log(`=================================================`);
 });
