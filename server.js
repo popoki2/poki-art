@@ -12,18 +12,17 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ==========================================
-// 🎯 제시어 데이터베이스 (자유롭게 추가/수정 가능)
+// 🎯 제시어 데이터베이스
 // ==========================================
 const wordDatabase = {
     all: [],
     food: ["떡볶이", "초밥", "마라탕", "붕어빵", "파스타", "짜장면", "탕수육", "치킨", "피자", "삼겹살", "라면", "돈까스"],
-    anime: ["피카츄", "도라에몽", "하츠네미쿠", "귀멸의칼날", "원피스", "슬램덩크", "건담", "짱구", "보노보노", "아냐"],
+    anime: ["피카츄", "도라에몽", "하츠네미쿠", "귀멸의칼날", "원피스", "슬램덤크", "건담", "짱구", "보노보노", "아냐"],
     daily: ["시계", "세탁기", "스마트폰", "안경", "우산", "자전거", "냉장고", "선풍기", "지갑", "휴지", "노트북"],
     meme: ["중꺾마", "너T야", "폼미쳤다", "어쩔티비", "무야호", "민초파", "핑구", "몰루", "테츠야"]
 };
 wordDatabase.all = [...wordDatabase.food, ...wordDatabase.anime, ...wordDatabase.daily, ...wordDatabase.meme];
 
-// 상태 관리
 const lobbyUsers = {};
 const rooms = {};
 let roomCounter = 500;
@@ -70,7 +69,8 @@ io.on('connection', (socket) => {
             timeLeft: 60,
             isPlaying: false,
             currentRound: 0,
-            maxRounds: 3
+            maxRounds: 3,
+            solvedPlayers: [] // 해당 턴에 정답을 맞힌 플레이어 목록
         };
 
         socket.emit('roomCreated', { roomId, password: roomConfig.password });
@@ -93,7 +93,6 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 로비에서 제거 후 방 추가
         delete lobbyUsers[socket.id];
         io.emit('updateLobbyUsers', Object.values(lobbyUsers));
 
@@ -108,18 +107,16 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('chatMessage', { sender: 'SYSTEM', text: `${currentUser.name} 님이 입장하셨습니다!` });
         io.emit('updateRoomList', getPublicRoomList());
 
-        // 2명 이상 접속 시 자동 게임 시작
         if (room.players.length >= 2 && !room.isPlaying) {
             startGame(roomId);
         }
     });
 
-    // 방 퇴장 (로비로 복귀)
     socket.on('leaveRoom', () => {
         leaveCurrentRoom(socket);
     });
 
-    // 캔버스 이벤트들
+    // Drawing Events
     socket.on('draw', (data) => {
         if (currentUser.roomId) socket.to(currentUser.roomId).emit('draw', data);
     });
@@ -130,34 +127,47 @@ io.on('connection', (socket) => {
         if (currentUser.roomId) io.to(currentUser.roomId).emit('fillCanvas', color);
     });
 
-    // 인게임 채팅 및 정답 판정
+    // 채팅 & 정답 판정
     socket.on('chatMessage', (msg) => {
         const roomId = currentUser.roomId;
         if (!roomId || !rooms[roomId]) return;
         const room = rooms[roomId];
         const drawer = room.players[room.drawerIndex];
 
-        // 출제자 채팅 금지
+        // 1. 출제자 채팅 금지
         if (room.isPlaying && drawer && drawer.id === socket.id) {
-            socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 출제 중에는 정답 스포일러 방지를 위해 채팅을 입력할 수 없습니다.' });
+            socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 당신은 출제자입니다! 정답 스포일러 방지를 위해 채팅을 할 수 없습니다.' });
             return;
         }
 
-        // 정답 판정
+        // 2. 이미 정답을 맞힌 플레이어 채팅 금지 (요청사항 6 반영)
+        if (room.isPlaying && room.solvedPlayers.includes(socket.id)) {
+            socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 이미 정답을 맞히셨습니다! 다른 플레이어를 위해 힌트나 채팅 입력이 제한됩니다.' });
+            return;
+        }
+
+        // 정답 검사
         if (room.isPlaying && msg.trim() === room.currentWord) {
             const player = room.players.find(p => p.id === socket.id);
             if (player) {
-                player.score += 150;
-                if (drawer) drawer.score += 50;
+                room.solvedPlayers.push(socket.id); // 정답자 목록에 추가
+
+                // 순서별 차등 점수
+                const points = Math.max(150 - (room.solvedPlayers.length - 1) * 30, 50);
+                player.score += points;
+                if (drawer) drawer.score += 30; // 출제자 보너스
 
                 io.to(roomId).emit('updatePlayers', room.players);
-                // 화면 중앙 팝업 연출 이벤트 전송
                 io.to(roomId).emit('correctAnswerOverlay', { winner: currentUser.name, word: room.currentWord });
                 io.to(roomId).emit('chatMessage', { 
                     sender: 'SYSTEM', 
-                    text: `🎉 [정답!] ${currentUser.name} 님이 정답(${room.currentWord})을 맞히셨습니다! (+150pt)` 
+                    text: `🎉 [정답!] ${currentUser.name} 님이 정답(${room.currentWord})을 맞히셨습니다! (+${points}pt)` 
                 });
-                nextTurn(roomId);
+
+                // 모든 플레이어(출제자 제외)가 정답을 맞혔으면 바로 다음 턴
+                if (room.solvedPlayers.length >= room.players.length - 1) {
+                    nextTurn(roomId);
+                }
             }
         } else {
             io.to(roomId).emit('chatMessage', { sender: currentUser.name, text: msg });
@@ -238,8 +248,10 @@ function nextTurn(roomId) {
     if (!room || room.players.length === 0) return;
 
     clearInterval(room.timer);
+    room.solvedPlayers = []; // 정답자 초기화
     room.drawerIndex++;
 
+    // 모든 인원이 한 번씩 그림을 다 그리면 라운드 증가 (요청사항 2 반영)
     if (room.drawerIndex >= room.players.length) {
         room.drawerIndex = 0;
         room.currentRound++;
@@ -257,9 +269,9 @@ function nextTurn(roomId) {
     room.currentWord = categoryList[Math.floor(Math.random() * categoryList.length)];
     room.timeLeft = room.roundTime;
 
+    // 캔버스 강제 클리어 (요청사항 2-1 버그 완벽 수정)
     io.to(roomId).emit('clearCanvas');
 
-    // 글자 수 힌트 표기 생성 (예: "떡볶이" -> "_ _ _")
     const lengthHint = "_ ".repeat(room.currentWord.length).trim();
 
     room.players.forEach(p => {
@@ -286,7 +298,7 @@ function nextTurn(roomId) {
         if (room.timeLeft <= 0) {
             clearInterval(room.timer);
             io.to(roomId).emit('chatMessage', { sender: 'SYSTEM', text: `⏰ 시간 초과! 정답은 [ ${room.currentWord} ] 이었습니다.` });
-            setTimeout(() => nextTurn(roomId), 2500);
+            setTimeout(() => nextTurn(roomId), 2000);
         }
     }, 1000);
 }
@@ -304,7 +316,6 @@ function getHTMLContent() {
         
         * { box-sizing: border-box; font-family: 'Noto Sans KR', sans-serif; user-select: none; }
         
-        /* 🎀 니디걸(NEEDY GIRL) 감성의 밝은 파스텔 도트 테마 */
         body {
             margin: 0; padding: 10px;
             background: #fce4ec;
@@ -328,16 +339,13 @@ function getHTMLContent() {
             border-bottom: 2px solid #f06292; text-shadow: 1px 1px 0px #c2185b;
         }
 
-        /* 🔴 1. 로비 화면 레이아웃 (첫번째 사진 반영) */
+        /* 로비 */
         #lobby-screen { width: 100%; max-width: 1000px; display: flex; flex-direction: column; gap: 10px; }
         #lobby-main { display: flex; gap: 10px; height: 420px; }
-        
         #lobby-left { width: 220px; display: flex; flex-direction: column; gap: 10px; }
         #user-list-box { flex: 1; overflow-y: auto; padding: 8px; background: #fff0f5; }
         .user-item { padding: 4px 8px; font-size: 13px; font-weight: bold; color: #880e4f; border-bottom: 1px dashed #f8bbd0; }
-        
         #my-profile { padding: 10px; background: #f3e5f5; display: flex; align-items: center; gap: 10px; }
-        
         #lobby-center { flex: 1; display: flex; flex-direction: column; gap: 8px; }
         #category-bar { display: flex; gap: 6px; }
         .tab-btn {
@@ -352,7 +360,6 @@ function getHTMLContent() {
             overflow-y: auto;
         }
         
-        /* 끄투식 방 카드 디자인 */
         .room-card {
             background: #fff5f8; border: 2px solid #ea80fc; border-radius: 6px; padding: 10px;
             display: flex; flex-direction: column; justify-content: space-between; cursor: pointer;
@@ -365,7 +372,7 @@ function getHTMLContent() {
         #lobby-bottom { height: 160px; display: flex; flex-direction: column; }
         #lobby-chat { flex: 1; background: #fafafa; overflow-y: auto; padding: 8px; font-size: 13px; }
 
-        /* 🟣 2. 방 만들기 모달 (두번째 사진 반영) */
+        /* 모달 */
         .modal {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(74, 20, 140, 0.4); display: flex; justify-content: center; align-items: center; z-index: 999;
@@ -376,21 +383,31 @@ function getHTMLContent() {
             border: 2px solid #f06292; border-radius: 4px; padding: 5px; font-weight: bold; outline: none; background: #fff;
         }
 
-        /* 🎨 3. 게임 화면 (세번째 사진 리뉴얼) */
+        /* 🎨 인게임 화면 */
         #game-screen { width: 100%; max-width: 1000px; display: none; flex-direction: column; gap: 8px; }
+        
+        /* 상단 바 배치 변경 (요청사항 3 반영: 제시어 중앙, 시간 오른쪽) */
         #game-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 14px; }
         
         .word-hint-box {
-            background: #fff; border: 2px solid #ff4081; padding: 4px 16px; border-radius: 20px;
-            color: #d81b60; font-size: 20px; font-weight: 900; letter-spacing: 4px; font-family: 'DungGeunMo';
+            background: #fff; border: 2px solid #ff4081; padding: 4px 24px; border-radius: 20px;
+            color: #d81b60; font-size: 22px; font-weight: 900; letter-spacing: 4px; font-family: 'DungGeunMo';
             box-shadow: 2px 2px 0 #f8bbd0;
         }
 
         #game-main { display: flex; gap: 10px; }
-        #game-players { width: 200px; padding: 6px; background: #fff0f5; }
+        
+        /* PLAYERS 박스 하단 로고 추가 (요청사항 4 반영) */
+        #game-players { width: 200px; padding: 6px; background: #fff0f5; display: flex; flex-direction: column; justify-content: space-between; }
         .player-card {
             background: #fff; border: 2px solid #ea80fc; padding: 6px; margin-bottom: 6px;
             border-radius: 6px; display: flex; justify-content: space-between; font-weight: bold; font-size: 13px;
+        }
+
+        .poki-logo-box {
+            background: linear-gradient(135deg, #ff80ab, #ea80fc); color: #fff; text-align: center;
+            padding: 10px; border-radius: 6px; font-family: 'DungGeunMo'; font-size: 18px; font-weight: 900;
+            text-shadow: 1px 1px 0px #c2185b; border: 2px solid #f06292; margin-top: 10px;
         }
 
         #canvas-container { flex: 1; display: flex; flex-direction: column; align-items: center; }
@@ -400,7 +417,7 @@ function getHTMLContent() {
             width: 100%; margin-top: 6px; display: flex; justify-content: space-between; align-items: center;
             background: #fff; border: 2px solid #f06292; padding: 6px; border-radius: 6px;
         }
-        .palette { display: flex; gap: 3px; max-width: 220px; flex-wrap: wrap; }
+        .palette { display: flex; gap: 3px; max-width: 250px; flex-wrap: wrap; }
         .color-dot { width: 18px; height: 18px; border-radius: 3px; border: 1px solid #ccc; cursor: pointer; }
 
         .tool-btn {
@@ -412,13 +429,13 @@ function getHTMLContent() {
         #game-chat-box { width: 250px; display: flex; flex-direction: column; }
         #game-chat { flex: 1; height: 350px; background: #fff; overflow-y: auto; padding: 6px; font-size: 12px; border: 2px solid #f06292; }
 
-        /* 🎆 정답 화면 중앙 알림 연출 배너 */
+        /* 🎆 팝업 연출 배너 */
         #answer-overlay {
             position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
             background: linear-gradient(135deg, #ff4081, #aa00ff); color: #fff; padding: 15px 30px;
             font-size: 24px; font-weight: 900; font-family: 'DungGeunMo'; border: 4px solid #fff;
             border-radius: 12px; box-shadow: 0 0 20px rgba(255, 64, 129, 0.8); display: none; z-index: 100;
-            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            text-align: center; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.5); } 100% { transform: translate(-50%, -50%) scale(1); } }
 
@@ -427,7 +444,7 @@ function getHTMLContent() {
 </head>
 <body>
 
-    <!-- 닉네임 입력 대기 모달 -->
+    <!-- 닉네임 설정 모달 -->
     <div id="nickname-modal" class="modal">
         <div class="pixel-box modal-body">
             <div class="window-header">ポキアト！！ 로비 접속</div>
@@ -445,7 +462,6 @@ function getHTMLContent() {
         </div>
 
         <div id="lobby-main">
-            <!-- 좌측: 유저 리스트 & 프로필 -->
             <div id="lobby-left">
                 <div class="pixel-box" style="flex:1; display:flex; flex-direction:column;">
                     <div class="window-header" style="font-size:11px;">👥 접속자 목록</div>
@@ -460,7 +476,6 @@ function getHTMLContent() {
                 </div>
             </div>
 
-            <!-- 중앙: 방 목록 및 만들기 탭 -->
             <div id="lobby-center">
                 <div id="category-bar">
                     <button class="tab-btn" onclick="openCreateRoomModal()">➕ 방 만들기</button>
@@ -470,7 +485,6 @@ function getHTMLContent() {
             </div>
         </div>
 
-        <!-- 하단: 로비 채팅 -->
         <div class="pixel-box" id="lobby-bottom">
             <div class="window-header" style="font-size:11px;">💬 로비 전체 채팅</div>
             <div id="lobby-chat"></div>
@@ -528,26 +542,32 @@ function getHTMLContent() {
 
     <!-- 📌 3. 게임 화면 -->
     <div id="game-screen">
+        <!-- 상단 배치 변경 반영 (요청사항 3) -->
         <div class="pixel-box" id="game-header">
             <span style="font-weight:bold; font-size:14px; color:#880e4f;" id="game-room-title">방 제목</span>
             <span>ROUND <span id="round-disp" style="color:#d81b60; font-weight:900;">1</span>/3</span>
-            <span>⏰ <span id="timer-disp" style="color:#d81b60; font-weight:900;">60</span>s</span>
             <div class="word-hint-box" id="word-disp">_ _ _</div>
+            <span>⏰ <span id="timer-disp" style="color:#d81b60; font-weight:900;">60</span>s</span>
             <button class="tool-btn" onclick="leaveRoom()" style="background:#ef5350; color:#fff;">나가기</button>
         </div>
 
         <div id="game-main">
-            <!-- 왼쪽: 유저 목록 -->
+            <!-- 좌측 플레이어 박스 하단 로고 추가 반영 (요청사항 4) -->
             <div class="pixel-box" id="game-players">
-                <div class="window-header" style="font-size:11px;">PLAYERS</div>
-                <div id="game-player-list" style="margin-top:6px;"></div>
+                <div>
+                    <div class="window-header" style="font-size:11px;">PLAYERS</div>
+                    <div id="game-player-list" style="margin-top:6px;"></div>
+                </div>
+                <div class="poki-logo-box">
+                    ポキアト！！
+                </div>
             </div>
 
-            <!-- 중앙: 캔버스 및 정교한 툴바 -->
+            <!-- 중앙 캔버스 및 정교한 툴바 -->
             <div id="canvas-container">
                 <div style="position:relative;">
                     <canvas id="canvas" width="500" height="380"></canvas>
-                    <div id="answer-overlay">🎉 [정답!] <span id="winner-name"></span> 님!</div>
+                    <div id="answer-overlay"><span id="overlay-text">🎉 [정답!] <span id="winner-name"></span> 님!</span></div>
                 </div>
                 
                 <div id="toolbar">
@@ -564,7 +584,7 @@ function getHTMLContent() {
                 </div>
             </div>
 
-            <!-- 오른쪽: 인게임 채팅 -->
+            <!-- 우측 채팅 -->
             <div class="pixel-box" id="game-chat-box">
                 <div class="window-header" style="font-size:11px;">CHAT & ANSWER</div>
                 <div id="game-chat"></div>
@@ -585,12 +605,41 @@ function getHTMLContent() {
         let isDrawing = false;
         let currentRoomList = [];
 
-        // 캔버스 초기화
+        // Web Audio API를 이용한 버그 없는 정답 효과음 생성기 (요청사항 7 반영)
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function playCorrectSound() {
+            try {
+                if (!audioCtx) audioCtx = new AudioCtx();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                const now = audioCtx.currentTime;
+                
+                // 3음계 팡파레 (도-미-솔)
+                const freqs = [523.25, 659.25, 783.99];
+                freqs.forEach((f, idx) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = f;
+                    gain.gain.setValueAtTime(0.1, now + idx * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.2);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + idx * 0.08);
+                    osc.stop(now + idx * 0.08 + 0.2);
+                });
+            } catch(e) { console.log(e); }
+        }
+
+        // 캔버스 설정
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
+        // 색상 2종 추가 반영 (요청사항 5: #4a2c00, #d8a7b1 추가)
         const colors = [
-            '#000000', '#ffffff', '#ff4081', '#aa00ff', '#3d5aff', '#00e5ff', 
+            '#000000', '#ffffff', '#4a2c00', '#d8a7b1', '#ff4081', '#aa00ff', '#3d5aff', '#00e5ff', 
             '#1de9b6', '#00e676', '#ffea00', '#ff9100', '#ff3d00', '#795548',
             '#f8bbd0', '#e1bee7', '#c5cae9', '#b2ebf2', '#b9f6ca', '#ffe0b2'
         ];
@@ -657,13 +706,16 @@ function getHTMLContent() {
             }
         });
 
-        socket.on('clearCanvas', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
+        socket.on('clearCanvas', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+        
         socket.on('fillCanvas', (color) => {
             ctx.fillStyle = color;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         });
 
-        // ------------------ 로비 제어 ------------------
+        // 로비
         function enterLobby() {
             myName = document.getElementById('nickname-input').value.trim() || '포키가이';
             document.getElementById('my-name-display').innerText = myName;
@@ -671,9 +723,7 @@ function getHTMLContent() {
             socket.emit('joinLobby', { name: myName });
         }
 
-        function leaveToNickname() {
-            location.reload();
-        }
+        function leaveToNickname() { location.reload(); }
 
         socket.on('updateLobbyUsers', (users) => {
             const box = document.getElementById('user-list-box');
@@ -724,7 +774,7 @@ function getHTMLContent() {
             box.scrollTop = box.scrollHeight;
         });
 
-        // ------------------ 방 생성 및 입장 ------------------
+        // 방 생성 및 입장
         function openCreateRoomModal() { document.getElementById('create-room-modal').style.display = 'flex'; }
         function closeCreateRoomModal() { document.getElementById('create-room-modal').style.display = 'none'; }
 
@@ -757,7 +807,7 @@ function getHTMLContent() {
             if (available) {
                 socket.emit('joinRoom', { roomId: available.id, password: '' });
             } else {
-                alert('입장 가능한 공개 방이 없습니다. 방을 만들어 보세요!');
+                alert('입장 가능한 공개 방이 없습니다.');
             }
         }
 
@@ -776,7 +826,7 @@ function getHTMLContent() {
             socket.emit('joinLobby', { name: myName });
         }
 
-        // ------------------ 인게임 제어 ------------------
+        // 인게임 제어
         socket.on('updatePlayers', (players) => {
             const list = document.getElementById('game-player-list');
             list.innerHTML = '';
@@ -796,10 +846,19 @@ function getHTMLContent() {
             const chatInput = document.getElementById('game-chat-input');
             const chatBtn = document.getElementById('game-chat-btn');
 
+            // 턴이 시작될 때 캔버스 3중 초기화 (요청사항 2-1)
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 출제자 알림 연출 (요청사항 1 반영)
             if (isDrawer) {
                 chatInput.disabled = true;
                 chatBtn.disabled = true;
                 chatInput.placeholder = "🎨 지금은 그림을 그리는 중입니다...";
+
+                const overlay = document.getElementById('answer-overlay');
+                document.getElementById('overlay-text').innerHTML = "🎨 당신이 출제자입니다!<br>제시어를 보고 그림을 그려주세요!";
+                overlay.style.display = 'block';
+                setTimeout(() => { overlay.style.display = 'none'; }, 2800);
             } else {
                 chatInput.disabled = false;
                 chatBtn.disabled = false;
@@ -811,12 +870,14 @@ function getHTMLContent() {
             document.getElementById('timer-disp').innerText = time;
         });
 
-        // 📌 화면 중앙 정답 오버레이 연출
+        // 정답 알림 배너 + 정답 사운드 재생 (요청사항 7 반영)
         socket.on('correctAnswerOverlay', (data) => {
+            playCorrectSound(); // 효과음 재생!
+
             const overlay = document.getElementById('answer-overlay');
-            document.getElementById('winner-name').innerText = data.winner;
+            document.getElementById('overlay-text').innerText = \`🎉 [정답!] \${data.winner} 님!\`;
             overlay.style.display = 'block';
-            setTimeout(() => { overlay.style.display = 'none'; }, 2200);
+            setTimeout(() => { overlay.style.display = 'none'; }, 2000);
         });
 
         function sendGameChat() {
@@ -851,6 +912,6 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` Poki Art (니디걸 픽셀 로비 버전) 서버 가동 완료!`);
+    console.log(` Poki Art (버그 수정 및 기능 완전체) 서버 가동!`);
     console.log(`=================================================`);
 });
