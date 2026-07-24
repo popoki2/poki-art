@@ -19,11 +19,14 @@ app.use(express.urlencoded({ extended: true }));
 const USERS_DB_PATH = path.join(__dirname, 'usersDB.json');
 const WORDS_DB_PATH = path.join(__dirname, 'wordsDB.json');
 
-// 유저 DB 불러오기 / 저장 함수
 function loadUsersDB() {
     try {
-        if (!fs.existsSync(USERS_DB_PATH)) fs.writeFileSync(USERS_DB_PATH, '{}', 'utf8');
-        return JSON.parse(fs.readFileSync(USERS_DB_PATH, 'utf8'));
+        if (!fs.existsSync(USERS_DB_PATH)) {
+            fs.writeFileSync(USERS_DB_PATH, '{}', 'utf8');
+            return {};
+        }
+        const data = fs.readFileSync(USERS_DB_PATH, 'utf8');
+        return JSON.parse(data || '{}');
     } catch (e) {
         console.error("유저 DB 로드 실패:", e);
         return {};
@@ -38,25 +41,36 @@ function saveUsersDB(data) {
     }
 }
 
-// 제시어 DB 불러오기 함수
 function loadWordsDB() {
     try {
-        if (!fs.existsSync(WORDS_DB_PATH)) {
-            console.error("wordsDB.json 파일이 존재하지 않습니다!");
-            return { food: [], anime: [], meme: [], lol: [] };
+        let data = {};
+        if (fs.existsSync(WORDS_DB_PATH)) {
+            data = JSON.parse(fs.readFileSync(WORDS_DB_PATH, 'utf8'));
         }
-        const data = JSON.parse(fs.readFileSync(WORDS_DB_PATH, 'utf8'));
-        // 전체(all) 카테고리 자동 합성 및 중복 제거
+
+        // 전달받은 데이터 세팅 및 기본 추가 카테고리 보완
+        data.food = data.food || [];
+        data.anime = data.anime || [];
+        data.meme = data.meme || [];
+        data.lol = data.lol || [];
+        data.game = data.game || ['포켓몬스터', '마인크래프트', '메이플스토리', '원신', '스타크래프트', '오버워치', '로블록스'];
+        data.object = data.object || ['시계', '냉장고', '선풍기', '스마트폰', '의자', '연필', '지우개', '안경'];
+
+        // 전체 카테고리 병합
         data.all = Array.from(new Set([
-            ...(data.food || []),
-            ...(data.anime || []),
-            ...(data.meme || []),
-            ...(data.lol || [])
+            ...data.food, ...data.anime, ...data.meme,
+            ...data.lol, ...data.game, ...data.object
         ]));
+
         return data;
     } catch (e) {
-        console.error("제시어 DB 로드 실패:", e);
-        return { food: [], anime: [], meme: [], lol: [], all: [] };
+        console.error("단어 DB 로드 실패, 기본값 설정:", e);
+        return { 
+            food: ['계란볶음밥', '신라면'], anime: ['포켓몬스터', '도라에몽'], 
+            meme: ['무야호', '어쩔티비'], lol: ['가렌', '티모'], 
+            game: ['포켓몬스터', '마인크래프트'], object: ['시계', '스마트폰'], 
+            all: ['계란볶음밥', '포켓몬스터', '무야호', '가렌', '시계'] 
+        };
     }
 }
 
@@ -67,6 +81,27 @@ const lobbyUsers = {};
 const rooms = {};
 let roomCounter = 500;
 
+// 상점 아이템 데이터 정의
+const SHOP_ITEMS = {
+    titles: [
+        { id: 't_newbie', name: '신입 포키', price: 0, reqLevel: 1 },
+        { id: 't_painter', name: '방구석 화가', price: 150, reqLevel: 1 },
+        { id: 't_picasso', name: '피카소의 후예', price: 400, reqLevel: 3 },
+        { id: 't_god', name: '그림의 신', price: 1000, reqLevel: 5 }
+    ],
+    badges: [
+        { id: 'b_default', name: '🔰 새싹', icon: '🔰', price: 0 },
+        { id: 'b_cat', name: '🐱 야옹이', icon: '🐱', price: 200 },
+        { id: 'b_crown', name: '👑 왕관', icon: '👑', price: 500 },
+        { id: 'b_fire', name: '🔥 불꽃', icon: '🔥', price: 800 }
+    ],
+    borders: [
+        { id: 'brd_none', name: '기본 테두리', style: 'border: 2px solid #ea80fc;', price: 0 },
+        { id: 'brd_gold', name: '골드 핑크 테두리', style: 'border: 3px solid #ffd700; box-shadow: 0 0 8px #ff4081;', price: 300 },
+        { id: 'brd_neon', name: '네온 퍼플 테두리', style: 'border: 3px solid #00e5ff; box-shadow: 0 0 10px #aa00ff;', price: 600 }
+    ]
+};
+
 app.get('*', (req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(getHTMLContent());
@@ -75,8 +110,8 @@ app.get('*', (req, res) => {
 io.on('connection', (socket) => {
     let currentUser = { id: socket.id, username: '', nickname: '', roomId: null, lastMsgTime: 0, lastMsgText: '' };
 
+    // 1. 회원가입
     socket.on('register', ({ username, password, nickname }) => {
-        usersDB = loadUsersDB(); // 실시간 파일 싱크
         const nickRegex = /^[a-zA-Z0-9가-힣]{2,8}$/;
         if (!nickRegex.test(nickname)) {
             socket.emit('authError', '닉네임은 2~8자의 한글, 영문, 숫자만 사용 가능합니다.');
@@ -86,6 +121,7 @@ io.on('connection', (socket) => {
             socket.emit('authError', '아이디는 3자 이상이어야 합니다.');
             return;
         }
+        
         if (usersDB[username]) {
             socket.emit('authError', '이미 존재하는 아이디입니다.');
             return;
@@ -94,22 +130,30 @@ io.on('connection', (socket) => {
         usersDB[username] = {
             password,
             nickname,
-            points: 100,
+            points: 200,
             exp: 0,
             level: 1,
             title: '신입 포키',
-            badge: '🔰'
+            badge: '🔰',
+            borderStyle: 'border: 2px solid #ea80fc;',
+            inventory: ['t_newbie', 'b_default', 'brd_none']
         };
-        saveUsersDB(usersDB);
 
-        socket.emit('authSuccess', { message: '회원가입 성공! 로그인해 주세요.' });
+        saveUsersDB(usersDB);
+        socket.emit('authSuccess', { message: '회원가입이 완료되었습니다! 로그인해 주세요.' });
     });
 
+    // 2. 로그인
     socket.on('login', ({ username, password }) => {
-        usersDB = loadUsersDB(); // 최신 DB 로드
         const user = usersDB[username];
-        if (!user || user.password !== password) {
-            socket.emit('authError', '아이디 또는 비밀번호가 올바르지 않습니다.');
+        
+        if (!user) {
+            socket.emit('authError', '존재하지 않는 아이디입니다.');
+            return;
+        }
+
+        if (user.password !== password) {
+            socket.emit('authError', '비밀번호가 올바르지 않습니다.');
             return;
         }
 
@@ -117,18 +161,63 @@ io.on('connection', (socket) => {
         currentUser.nickname = user.nickname;
         lobbyUsers[socket.id] = { id: socket.id, ...user };
 
-        socket.emit('loginSuccess', { username, ...user });
+        socket.emit('loginSuccess', { username, ...user, shopCatalog: SHOP_ITEMS });
         io.emit('updateLobbyUsers', Object.values(lobbyUsers));
         socket.emit('updateRoomList', getPublicRoomList());
+    });
+
+    // 3. 상점 아이템 구매
+    socket.on('buyItem', ({ itemType, itemId }) => {
+        const user = usersDB[currentUser.username];
+        if (!user) return;
+
+        let item = null;
+        if (itemType === 'titles') item = SHOP_ITEMS.titles.find(i => i.id === itemId);
+        if (itemType === 'badges') item = SHOP_ITEMS.badges.find(i => i.id === itemId);
+        if (itemType === 'borders') item = SHOP_ITEMS.borders.find(i => i.id === itemId);
+
+        if (!item) return socket.emit('shopError', '존재하지 않는 아이템입니다.');
+        if (user.inventory.includes(itemId)) return socket.emit('shopError', '이미 보유한 아이템입니다.');
+        if (item.reqLevel && user.level < item.reqLevel) return socket.emit('shopError', `레벨 ${item.reqLevel} 이상만 구매 가능합니다!`);
+        if (user.points < item.price) return socket.emit('shopError', '포인트가 부족합니다!');
+
+        user.points -= item.price;
+        user.inventory.push(itemId);
+        saveUsersDB(usersDB);
+
+        socket.emit('shopSuccess', { message: `'${item.name}' 구매 완료!`, user });
+    });
+
+    // 4. 아이템 장착
+    socket.on('equipItem', ({ itemType, itemId }) => {
+        const user = usersDB[currentUser.username];
+        if (!user || !user.inventory.includes(itemId)) return;
+
+        if (itemType === 'titles') {
+            const item = SHOP_ITEMS.titles.find(i => i.id === itemId);
+            if (item) user.title = item.name;
+        } else if (itemType === 'badges') {
+            const item = SHOP_ITEMS.badges.find(i => i.id === itemId);
+            if (item) user.badge = item.icon;
+        } else if (itemType === 'borders') {
+            const item = SHOP_ITEMS.borders.find(i => i.id === itemId);
+            if (item) user.borderStyle = item.style;
+        }
+
+        saveUsersDB(usersDB);
+        lobbyUsers[socket.id] = { id: socket.id, ...user };
+        
+        socket.emit('profileUpdated', user);
+        io.emit('updateLobbyUsers', Object.values(lobbyUsers));
     });
 
     socket.on('lobbyChat', (msg) => {
         if (!currentUser.nickname) return;
         if (checkSpam(socket, currentUser, msg)) return;
-
         io.emit('lobbyChat', { sender: currentUser.nickname, text: msg });
     });
 
+    // 5. 방 생성
     socket.on('createRoom', (roomConfig) => {
         roomCounter++;
         const roomId = 'ROOM_' + roomCounter;
@@ -148,8 +237,9 @@ io.on('connection', (socket) => {
             timeLeft: 60,
             isPlaying: false,
             currentRound: 0,
-            maxRounds: 3,
-            solvedPlayers: []
+            maxRounds: parseInt(roomConfig.maxRounds) || 3,
+            solvedPlayers: [],
+            likedPlayers: []
         };
 
         socket.emit('roomCreated', { roomId, password: roomConfig.password });
@@ -168,7 +258,16 @@ io.on('connection', (socket) => {
         currentUser.roomId = roomId;
         socket.join(roomId);
 
-        const player = { id: socket.id, name: currentUser.nickname, score: 0, username: currentUser.username };
+        const user = usersDB[currentUser.username] || {};
+        const player = { 
+            id: socket.id, 
+            name: currentUser.nickname, 
+            score: 0, 
+            username: currentUser.username,
+            title: user.title || '신입 포키',
+            badge: user.badge || '🔰',
+            borderStyle: user.borderStyle || ''
+        };
         room.players.push(player);
 
         socket.emit('roomJoined', room);
@@ -181,18 +280,47 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('leaveRoom', () => {
-        leaveCurrentRoom(socket);
-    });
+    socket.on('leaveRoom', () => { leaveCurrentRoom(socket); });
+    socket.on('draw', (data) => { if (currentUser.roomId) socket.to(currentUser.roomId).emit('draw', data); });
+    socket.on('clearCanvas', () => { if (currentUser.roomId) io.to(currentUser.roomId).emit('clearCanvas'); });
+    socket.on('fillCanvas', (color) => { if (currentUser.roomId) io.to(currentUser.roomId).emit('fillCanvas', color); });
 
-    socket.on('draw', (data) => {
-        if (currentUser.roomId) socket.to(currentUser.roomId).emit('draw', data);
-    });
-    socket.on('clearCanvas', () => {
-        if (currentUser.roomId) io.to(currentUser.roomId).emit('clearCanvas');
-    });
-    socket.on('fillCanvas', (color) => {
-        if (currentUser.roomId) io.to(currentUser.roomId).emit('fillCanvas', color);
+    // 6. 따봉(👍) 기능
+    socket.on('sendLike', () => {
+        const roomId = currentUser.roomId;
+        if (!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        if (!room.isPlaying) return;
+        const drawer = room.players[room.drawerIndex];
+        
+        if (drawer && drawer.id === socket.id) {
+            socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 자신의 그림에는 따봉을 누를 수 없습니다!' });
+            return;
+        }
+
+        if (room.likedPlayers.includes(socket.id)) {
+            socket.emit('chatMessage', { sender: 'SYSTEM', text: '⚠️ 이번 라운드에는 이미 따봉을 눌렀습니다.' });
+            return;
+        }
+
+        room.likedPlayers.push(socket.id);
+        
+        if (drawer) {
+            drawer.score += 20;
+            if (usersDB[drawer.username]) {
+                usersDB[drawer.username].points += 10;
+                usersDB[drawer.username].exp += 5;
+                saveUsersDB(usersDB);
+            }
+        }
+
+        io.to(roomId).emit('updatePlayers', room.players);
+        io.to(roomId).emit('likeEffect', { sender: currentUser.nickname });
+        io.to(roomId).emit('chatMessage', { 
+            sender: 'SYSTEM 👍', 
+            text: `${currentUser.nickname} 님이 출제자에게 따봉을 날렸습니다! (출제자 +20pt)` 
+        });
     });
 
     socket.on('chatMessage', (msg) => {
@@ -222,11 +350,17 @@ io.on('connection', (socket) => {
                 player.score += points;
                 if (drawer) drawer.score += 30;
 
-                // 유저 파일 DB 보상 반영 및 파일 저장
-                usersDB = loadUsersDB();
                 if (usersDB[currentUser.username]) {
-                    usersDB[currentUser.username].points += Math.floor(points / 2);
-                    usersDB[currentUser.username].exp += 20;
+                    const u = usersDB[currentUser.username];
+                    u.points += Math.floor(points / 2);
+                    u.exp += 30;
+
+                    const neededExp = u.level * 100;
+                    if (u.exp >= neededExp) {
+                        u.exp -= neededExp;
+                        u.level += 1;
+                        socket.emit('chatMessage', { sender: 'SYSTEM 🎊', text: `축하합니다! 레벨이 상승하여 [LV.${u.level}] 이 되었습니다!` });
+                    }
                     saveUsersDB(usersDB);
                 }
 
@@ -259,12 +393,7 @@ function checkSpam(socket, user, msg) {
         socket.emit('chatMessage', { sender: 'SYSTEM ⚠️', text: '채팅이 너무 빠릅니다! 천천히 입력해 주세요.' });
         return true;
     }
-    if (user.lastMsgText === msg && msg.length > 2) {
-        socket.emit('chatMessage', { sender: 'SYSTEM ⚠️', text: '동일한 메시지를 연속으로 보낼 수 없습니다.' });
-        return true;
-    }
     user.lastMsgTime = now;
-    user.lastMsgText = msg;
     return false;
 }
 
@@ -277,8 +406,6 @@ function leaveCurrentRoom(socket) {
             socket.leave(roomId);
             
             io.to(roomId).emit('updatePlayers', room.players);
-            io.to(roomId).emit('chatMessage', { sender: 'SYSTEM', text: `누군가가 퇴장하셨습니다.` });
-
             if (room.players.length === 0) {
                 clearInterval(room.timer);
                 delete rooms[roomId];
@@ -287,7 +414,6 @@ function leaveCurrentRoom(socket) {
                 room.isPlaying = false;
                 io.to(roomId).emit('chatMessage', { sender: 'SYSTEM', text: '인원이 부족하여 대기 상태로 전환됩니다.' });
             }
-            
             io.emit('updateRoomList', getPublicRoomList());
             break;
         }
@@ -296,14 +422,8 @@ function leaveCurrentRoom(socket) {
 
 function getPublicRoomList() {
     return Object.values(rooms).map(r => ({
-        id: r.id,
-        roomNum: r.roomNum,
-        title: r.title,
-        isLocked: !!r.password,
-        currentPlayers: r.players.length,
-        maxPlayers: r.maxPlayers,
-        category: r.category,
-        isPlaying: r.isPlaying
+        id: r.id, roomNum: r.roomNum, title: r.title, isLocked: !!r.password,
+        currentPlayers: r.players.length, maxPlayers: r.maxPlayers, category: r.category, isPlaying: r.isPlaying
     }));
 }
 
@@ -322,6 +442,7 @@ function nextTurn(roomId) {
 
     clearInterval(room.timer);
     room.solvedPlayers = [];
+    room.likedPlayers = [];
     room.drawerIndex++;
 
     if (room.drawerIndex >= room.players.length) {
@@ -333,7 +454,6 @@ function nextTurn(roomId) {
         room.isPlaying = false;
         const sorted = [...room.players].sort((a, b) => b.score - a.score);
         
-        usersDB = loadUsersDB();
         if (sorted[0] && usersDB[sorted[0].username]) {
             usersDB[sorted[0].username].points += 300;
             usersDB[sorted[0].username].exp += 100;
@@ -345,9 +465,6 @@ function nextTurn(roomId) {
     }
 
     const drawer = room.players[room.drawerIndex];
-    
-    // 파일 DB 기반 제시어 추출
-    wordDatabase = loadWordsDB();
     const categoryList = wordDatabase[room.category] || wordDatabase.all;
 
     room.currentWord = categoryList[Math.floor(Math.random() * categoryList.length)];
@@ -390,7 +507,6 @@ function getHTMLContent() {
     <script src="/socket.io/socket.io.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=DungGeunMo&family=Noto+Sans+KR:wght@500;700;900&display=swap');
-        
         * { box-sizing: border-box; font-family: 'Noto Sans KR', sans-serif; user-select: none; }
         
         body {
@@ -412,11 +528,27 @@ function getHTMLContent() {
             border-bottom: 2px solid #f06292; text-shadow: 1px 1px 0px #c2185b;
         }
 
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(252, 228, 236, 0.95); display: none; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 9999;
+        }
+        .loading-title {
+            font-family: 'DungGeunMo'; font-size: 32px; color: #d81b60; margin-bottom: 15px;
+            text-shadow: 2px 2px 0px #f8bbd0; animation: pulse 1s infinite alternate;
+        }
+        .spinner {
+            width: 50px; height: 50px; border: 5px solid #f8bbd0; border-top: 5px solid #ff4081;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0% { transform: scale(0.98); } 100% { transform: scale(1.03); } }
+
         .modal {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(74, 20, 140, 0.4); display: flex; justify-content: center; align-items: center; z-index: 999;
         }
-        .modal-body { width: 380px; padding: 18px; background: #fff; display: flex; flex-direction: column; gap: 12px; }
+        .modal-body { width: 420px; padding: 18px; background: #fff; display: flex; flex-direction: column; gap: 12px; }
         .form-group { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: bold; }
         input[type="text"], input[type="password"], select {
             border: 2px solid #f06292; border-radius: 4px; padding: 6px; font-weight: bold; outline: none; background: #fff;
@@ -424,9 +556,9 @@ function getHTMLContent() {
 
         #lobby-screen { width: 100%; max-width: 1000px; display: none; flex-direction: column; gap: 10px; }
         #lobby-main { display: flex; gap: 10px; height: 420px; }
-        #lobby-left { width: 220px; display: flex; flex-direction: column; gap: 10px; }
+        #lobby-left { width: 230px; display: flex; flex-direction: column; gap: 10px; }
         #user-list-box { flex: 1; overflow-y: auto; padding: 8px; background: #fff0f5; }
-        .user-item { padding: 4px 8px; font-size: 13px; font-weight: bold; color: #880e4f; border-bottom: 1px dashed #f8bbd0; }
+        .user-item { padding: 6px 8px; font-size: 13px; font-weight: bold; color: #880e4f; border-bottom: 1px dashed #f8bbd0; border-radius: 4px; margin-bottom: 4px; }
         
         #my-profile { padding: 10px; background: #f3e5f5; display: flex; flex-direction: column; gap: 4px; }
         .profile-badge { font-size: 11px; color: #7b1fa2; font-weight: bold; background: #e1bee7; padding: 2px 6px; border-radius: 4px; width: fit-content; }
@@ -435,7 +567,7 @@ function getHTMLContent() {
         #category-bar { display: flex; gap: 6px; }
         .tab-btn {
             background: #ff80ab; color: #fff; border: 2px solid #c2185b; padding: 6px 14px;
-            font-weight: bold; border-radius: 6px 6px 0 0; cursor: pointer; box-shadow: 2px 2px 0 #880e4f;
+            font-weight: bold; border-radius: 6px; cursor: pointer; box-shadow: 2px 2px 0 #880e4f;
         }
         .tab-btn:hover { background: #ff4081; }
 
@@ -452,8 +584,14 @@ function getHTMLContent() {
         }
         .room-card:hover { transform: translateY(-2px); background: #f3e5f5; }
 
-        #lobby-bottom { height: 150px; display: flex; flex-direction: column; }
+        #lobby-bottom { height: 140px; display: flex; flex-direction: column; }
         #lobby-chat { flex: 1; background: #fafafa; overflow-y: auto; padding: 8px; font-size: 13px; }
+
+        .shop-tab-container { display: flex; gap: 4px; border-bottom: 2px solid #f06292; padding-bottom: 4px; }
+        .shop-tab-btn { padding: 4px 10px; font-size: 12px; font-weight: bold; cursor: pointer; border-radius: 4px; background: #f3e5f5; border: 1px solid #ab47bc; }
+        .shop-tab-btn.active { background: #ff80ab; color: #fff; border-color: #c2185b; }
+        .shop-item-list { display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; padding: 4px; }
+        .shop-item-card { display: flex; justify-content: space-between; align-items: center; background: #fff5f8; padding: 8px; border: 1px solid #f06292; border-radius: 6px; }
 
         #game-screen { width: 100%; max-width: 1000px; display: none; flex-direction: column; gap: 8px; }
         #game-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 14px; }
@@ -461,30 +599,20 @@ function getHTMLContent() {
         .word-hint-box {
             background: #fff; border: 2px solid #ff4081; padding: 4px 24px; border-radius: 20px;
             color: #d81b60; font-size: 22px; font-weight: 900; letter-spacing: 4px; font-family: 'DungGeunMo';
-            box-shadow: 2px 2px 0 #f8bbd0;
         }
 
         #game-main { display: flex; gap: 10px; }
-        #game-players { width: 200px; padding: 6px; background: #fff0f5; display: flex; flex-direction: column; justify-content: space-between; }
-        .player-card {
-            background: #fff; border: 2px solid #ea80fc; padding: 6px; margin-bottom: 6px;
-            border-radius: 6px; display: flex; justify-content: space-between; font-weight: bold; font-size: 13px;
-        }
-
-        .poki-logo-box {
-            background: linear-gradient(135deg, #ff80ab, #ea80fc); color: #fff; text-align: center;
-            padding: 10px; border-radius: 6px; font-family: 'DungGeunMo'; font-size: 18px; font-weight: 900;
-            text-shadow: 1px 1px 0px #c2185b; border: 2px solid #f06292; margin-top: 10px;
-        }
+        #game-players { width: 220px; padding: 6px; background: #fff0f5; display: flex; flex-direction: column; justify-content: space-between; }
+        .player-card { background: #fff; padding: 6px; margin-bottom: 6px; border-radius: 6px; display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; }
 
         #canvas-container { flex: 1; display: flex; flex-direction: column; align-items: center; }
-        canvas { background: #ffffff; border: 3px solid #ff80ab; border-radius: 8px; cursor: crosshair; box-shadow: 4px 4px 0 #ea80fc; }
+        canvas { background: #ffffff; border: 3px solid #ff80ab; border-radius: 8px; cursor: crosshair; }
         
         #toolbar {
             width: 100%; margin-top: 6px; display: flex; justify-content: space-between; align-items: center;
             background: #fff; border: 2px solid #f06292; padding: 6px; border-radius: 6px;
         }
-        .palette { display: flex; gap: 3px; max-width: 250px; flex-wrap: wrap; }
+        .palette { display: flex; gap: 3px; max-width: 200px; flex-wrap: wrap; }
         .color-dot { width: 18px; height: 18px; border-radius: 3px; border: 1px solid #ccc; cursor: pointer; }
 
         .tool-btn {
@@ -493,22 +621,35 @@ function getHTMLContent() {
         }
         .tool-btn:hover { background: #e1bee7; }
 
-        #game-chat-box { width: 250px; display: flex; flex-direction: column; }
+        #game-chat-box { width: 240px; display: flex; flex-direction: column; }
         #game-chat { flex: 1; height: 350px; background: #fff; overflow-y: auto; padding: 6px; font-size: 12px; border: 2px solid #f06292; }
 
         #answer-overlay {
             position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
             background: linear-gradient(135deg, #ff4081, #aa00ff); color: #fff; padding: 18px 36px;
-            font-size: 26px; font-weight: 900; font-family: 'DungGeunMo'; border: 4px solid #fff;
-            border-radius: 16px; box-shadow: 0 0 25px rgba(255, 64, 129, 0.9); display: none; z-index: 100;
-            text-align: center; white-space: nowrap;
-            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-size: 24px; font-weight: 900; font-family: 'DungGeunMo'; border: 4px solid #fff;
+            border-radius: 16px; display: none; z-index: 100; text-align: center; white-space: nowrap;
         }
-        @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.5); } 100% { transform: translate(-50%, -50%) scale(1); } }
+
+        #like-effect {
+            position: absolute; top: 20%; left: 50%; transform: translateX(-50%);
+            font-size: 48px; display: none; z-index: 101; animation: floatUp 1.2s ease-out forwards;
+        }
+        @keyframes floatUp {
+            0% { opacity: 0; transform: translate(-50%, 20px) scale(0.5); }
+            50% { opacity: 1; transform: translate(-50%, -20px) scale(1.3); }
+            100% { opacity: 0; transform: translate(-50%, -60px) scale(1); }
+        }
     </style>
 </head>
 <body>
 
+    <div id="loading-overlay">
+        <div class="loading-title">포키파티에 오신것을 환영합니다 !</div>
+        <div class="spinner"></div>
+    </div>
+
+    <!-- 🔐 로그인/회원가입 모달 -->
     <div id="auth-modal" class="modal">
         <div class="pixel-box modal-body">
             <div class="window-header">ポキパティ！！ 접속하기</div>
@@ -536,16 +677,34 @@ function getHTMLContent() {
                     <input type="password" id="reg-pw" placeholder="비밀번호...">
                 </div>
                 <div class="form-group">
-                    <span>닉네임 (2~8자, 한/영/숫자)</span>
-                    <input type="text" id="reg-nick" placeholder="포키가이">
+                    <span>닉네임 (2~8자)</span>
+                    <input type="text" id="reg-nick" placeholder="닉네임...">
                 </div>
-                <p style="font-size:10px; color:#c2185b; margin:0;">⚠️ 닉네임은 2~8자의 한글, 영문, 숫자만 사용할 수 있습니다.</p>
                 <button class="tool-btn" onclick="submitRegister()" style="background:#ba68c8; color:#fff; padding:8px; margin-top:6px;">회원가입 완료 ✨</button>
                 <p style="font-size:11px; text-align:center; color:#ad1457; cursor:pointer;" onclick="toggleAuthMode('login')">이미 계정이 있으신가요? 로그인하기</p>
             </div>
         </div>
     </div>
 
+    <!-- 🛍️ 상점 모달 -->
+    <div id="shop-modal" class="modal" style="display:none;">
+        <div class="pixel-box modal-body" style="width:480px;">
+            <div class="window-header">
+                <span>🛍️ 포키 커스터마이징 상점</span>
+                <button class="tool-btn" onclick="closeShop()" style="font-size:10px;">X</button>
+            </div>
+            
+            <div class="shop-tab-container">
+                <button class="shop-tab-btn active" onclick="switchShopTab('titles')">🏅 칭호</button>
+                <button class="shop-tab-btn" onclick="switchShopTab('badges')">🐱 아이콘</button>
+                <button class="shop-tab-btn" onclick="switchShopTab('borders')">✨ 테두리</button>
+            </div>
+
+            <div id="shop-item-list" class="shop-item-list"></div>
+        </div>
+    </div>
+
+    <!-- 🏰 로비 화면 -->
     <div id="lobby-screen">
         <div class="pixel-box window-header">
             <span>ポキパティ！！ (Poki Party) Lobby</span>
@@ -564,7 +723,10 @@ function getHTMLContent() {
                         <span class="profile-badge" id="my-title">신입 포키</span>
                     </div>
                     <div id="my-name-display" style="font-weight:900; font-size:15px; color:#880e4f;">포키가이</div>
-                    <div style="font-size:11px; color:#ad1457; font-weight:bold;">보유 포인트: <span id="my-points" style="color:#d81b60;">100</span> Pt</div>
+                    <div style="font-size:11px; color:#ad1457; font-weight:bold;">
+                        LV.<span id="my-level">1</span> | 포인트: <span id="my-points" style="color:#d81b60;">200</span> Pt
+                    </div>
+                    <button class="tool-btn" onclick="openShop()" style="margin-top:4px; background:#ba68c8; color:#fff;">🛍️ 상점 / 꾸미기</button>
                 </div>
             </div>
 
@@ -587,7 +749,7 @@ function getHTMLContent() {
         </div>
     </div>
 
-    <!-- 🏠 방 만들기 모달 (롤 카테고리 연동) -->
+    <!-- 🏠 방 만들기 모달 -->
     <div id="create-room-modal" class="modal" style="display:none;">
         <div class="pixel-box modal-body">
             <div class="window-header">🏠 방 만들기</div>
@@ -608,8 +770,17 @@ function getHTMLContent() {
                 </select>
             </div>
             <div class="form-group">
+                <span>총 라운드 수</span>
+                <select id="room-rounds-select">
+                    <option value="3" selected>3 라운드</option>
+                    <option value="5">5 라운드</option>
+                    <option value="10">10 라운드</option>
+                </select>
+            </div>
+            <div class="form-group">
                 <span>라운드 시간</span>
                 <select id="room-time-select">
+                    <option value="30">30초</option>
                     <option value="45">45초</option>
                     <option value="60" selected>60초</option>
                     <option value="90">90초</option>
@@ -618,11 +789,13 @@ function getHTMLContent() {
             <div class="form-group">
                 <span>주제 선택</span>
                 <select id="room-cate-select">
-                    <option value="all">🎨 전체 (대용량 1000+)</option>
+                    <option value="all">🎨 전체 (대용량)</option>
+                    <option value="game">🎮 게임 테마</option>
+                    <option value="object">📦 사물 테마</option>
                     <option value="food">🍕 맛있는 음식</option>
                     <option value="anime">⚡ 애니메이션</option>
-                    <option value="lol">⚔️ 리그 오브 레전드 (LOL)</option>
-                    <option value="meme">🔥 유행어 / 밈</option>
+                    <option value="meme">🤣 밈 / 인터넷 용어</option>
+                    <option value="lol">⚔️ 리그 오브 레전드</option>
                 </select>
             </div>
             <div style="display:flex; gap:6px; margin-top:8px;">
@@ -632,10 +805,11 @@ function getHTMLContent() {
         </div>
     </div>
 
+    <!-- 🎮 게임 플레이 화면 -->
     <div id="game-screen">
         <div class="pixel-box" id="game-header">
             <span style="font-weight:bold; font-size:14px; color:#880e4f;" id="game-room-title">방 제목</span>
-            <span>ROUND <span id="round-disp" style="color:#d81b60; font-weight:900;">1</span>/3</span>
+            <span>ROUND <span id="round-disp" style="color:#d81b60; font-weight:900;">1</span>/<span id="max-round-disp">3</span></span>
             <div class="word-hint-box" id="word-disp">_ _ _</div>
             <span>⏰ <span id="timer-disp" style="color:#d81b60; font-weight:900;">60</span>s</span>
             <button class="tool-btn" onclick="confirmLeaveRoom()" style="background:#ef5350; color:#fff;">나가기</button>
@@ -647,15 +821,13 @@ function getHTMLContent() {
                     <div class="window-header" style="font-size:11px;">PLAYERS</div>
                     <div id="game-player-list" style="margin-top:6px;"></div>
                 </div>
-                <div class="poki-logo-box">
-                    ポキパティ！！
-                </div>
             </div>
 
             <div id="canvas-container">
                 <div style="position:relative;">
                     <canvas id="canvas" width="500" height="380"></canvas>
                     <div id="answer-overlay"><span id="overlay-text"></span></div>
+                    <div id="like-effect">👍 +1</div>
                 </div>
                 
                 <div id="toolbar">
@@ -664,10 +836,10 @@ function getHTMLContent() {
                         <button class="tool-btn" onclick="setPenWidth(2)">•</button>
                         <button class="tool-btn" onclick="setPenWidth(6)">●</button>
                         <button class="tool-btn" onclick="setPenWidth(14)">🔴</button>
-                        <button class="tool-btn" onclick="setPenWidth(28)">██</button>
                         <button class="tool-btn" onclick="fillBucket()">🪣</button>
                         <button class="tool-btn" onclick="useEraser()">🧹</button>
                         <button class="tool-btn" onclick="clearCanvas()" style="background:#ffebee;">❌</button>
+                        <button class="tool-btn" onclick="sendLike()" style="background:#fff9c4; border-color:#fbc02d;">👍 따봉</button>
                     </div>
                 </div>
             </div>
@@ -686,35 +858,13 @@ function getHTMLContent() {
     <script>
         const socket = io();
         let myAccount = null;
+        let shopCatalog = {};
+        let currentShopTab = 'titles';
         let isDrawer = false;
         let currentColor = '#000000';
         let currentWidth = 6;
         let isDrawing = false;
         let currentRoomList = [];
-
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        let audioCtx = null;
-
-        function playCorrectSound() {
-            try {
-                if (!audioCtx) audioCtx = new AudioCtx();
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                const now = audioCtx.currentTime;
-                const freqs = [523.25, 659.25, 783.99];
-                freqs.forEach((f, idx) => {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
-                    osc.type = 'triangle';
-                    osc.frequency.value = f;
-                    gain.gain.setValueAtTime(0.1, now + idx * 0.08);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.2);
-                    osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    osc.start(now + idx * 0.08);
-                    osc.stop(now + idx * 0.08 + 0.2);
-                });
-            } catch(e) {}
-        }
 
         function toggleAuthMode(mode) {
             document.getElementById('login-form').style.display = (mode === 'login') ? 'block' : 'none';
@@ -742,22 +892,95 @@ function getHTMLContent() {
 
         socket.on('loginSuccess', (userData) => {
             myAccount = userData;
-            document.getElementById('auth-modal').style.display = 'none';
-            document.getElementById('lobby-screen').style.display = 'flex';
+            shopCatalog = userData.shopCatalog;
 
-            document.getElementById('my-name-display').innerText = userData.nickname;
-            document.getElementById('my-title').innerText = userData.title;
-            document.getElementById('my-badge').innerText = userData.badge;
-            document.getElementById('my-points').innerText = userData.points;
+            document.getElementById('auth-modal').style.display = 'none';
+
+            const loadingOverlay = document.getElementById('loading-overlay');
+            loadingOverlay.style.display = 'flex';
+
+            setTimeout(() => {
+                loadingOverlay.style.display = 'none';
+                document.getElementById('lobby-screen').style.display = 'flex';
+                updateProfileUI(userData);
+            }, 1800);
+        });
+
+        function updateProfileUI(u) {
+            myAccount = u;
+            document.getElementById('my-name-display').innerText = u.nickname;
+            document.getElementById('my-title').innerText = u.title;
+            document.getElementById('my-badge').innerText = u.badge;
+            document.getElementById('my-level').innerText = u.level;
+            document.getElementById('my-points').innerText = u.points;
+
+            const profileBox = document.getElementById('my-profile');
+            if (u.borderStyle) profileBox.style = u.borderStyle + " padding:10px; background:#f3e5f5;";
+        }
+
+        socket.on('profileUpdated', (updatedUser) => {
+            updateProfileUI(updatedUser);
+            renderShopItems();
+        });
+
+        function openShop() {
+            renderShopItems();
+            document.getElementById('shop-modal').style.display = 'flex';
+        }
+
+        function closeShop() {
+            document.getElementById('shop-modal').style.display = 'none';
+        }
+
+        function switchShopTab(tab) {
+            currentShopTab = tab;
+            document.querySelectorAll('.shop-tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            renderShopItems();
+        }
+
+        function renderShopItems() {
+            const container = document.getElementById('shop-item-list');
+            container.innerHTML = '';
+
+            const items = shopCatalog[currentShopTab] || [];
+            items.forEach(item => {
+                const isOwned = myAccount.inventory.includes(item.id);
+                const card = document.createElement('div');
+                card.className = 'shop-item-card';
+
+                let reqInfo = item.reqLevel ? \` [LV.\${item.reqLevel} 이상]\` : '';
+
+                let actionBtn = '';
+                if (isOwned) {
+                    actionBtn = \`<button class="tool-btn" onclick="equipItem('\${currentShopTab}', '\${item.id}')" style="background:#81c784; color:#fff;">장착</button>\`;
+                } else {
+                    actionBtn = \`<button class="tool-btn" onclick="buyItem('\${currentShopTab}', '\${item.id}')" style="background:#ff80ab; color:#fff;">구매 (\${item.price}pt)</button>\`;
+                }
+
+                card.innerHTML = \`
+                    <div>
+                        <div style="font-weight:bold; font-size:13px; color:#4a148c;">\${item.name}\${reqInfo}</div>
+                    </div>
+                    \${actionBtn}
+                \`;
+                container.appendChild(card);
+            });
+        }
+
+        function buyItem(type, id) { socket.emit('buyItem', { itemType: type, itemId: id }); }
+        function equipItem(type, id) { socket.emit('equipItem', { itemType: type, itemId: id }); }
+
+        socket.on('shopError', (msg) => alert(msg));
+        socket.on('shopSuccess', (data) => {
+            alert(data.message);
+            updateProfileUI(data.user);
+            renderShopItems();
         });
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const colors = [
-            '#000000', '#ffffff', '#4a2c00', '#d8a7b1', '#ff4081', '#aa00ff', '#3d5aff', '#00e5ff', 
-            '#1de9b6', '#00e676', '#ffea00', '#ff9100', '#ff3d00', '#795548',
-            '#f8bbd0', '#e1bee7', '#c5cae9', '#b2ebf2', '#b9f6ca', '#ffe0b2'
-        ];
+        const colors = ['#000000', '#ffffff', '#ff4081', '#aa00ff', '#3d5aff', '#00e5ff', '#00e676', '#ffea00', '#ff9100', '#ff3d00'];
         const palette = document.getElementById('palette');
         colors.forEach(c => {
             const dot = document.createElement('div');
@@ -767,32 +990,24 @@ function getHTMLContent() {
             palette.appendChild(dot);
         });
 
-        canvas.addEventListener('mousedown', startDrawing);
-        canvas.addEventListener('mousemove', draw);
-        canvas.addEventListener('mouseup', stopDrawing);
-        canvas.addEventListener('mouseleave', stopDrawing);
-
-        function startDrawing(e) {
+        canvas.addEventListener('mousedown', (e) => {
             if (!isDrawer) return;
             isDrawing = true;
             const pos = getCanvasPos(e);
-            ctx.beginPath();
-            ctx.moveTo(pos.x, pos.y);
+            ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
             socket.emit('draw', { type: 'start', x: pos.x, y: pos.y, color: currentColor, width: currentWidth });
-        }
+        });
 
-        function draw(e) {
+        canvas.addEventListener('mousemove', (e) => {
             if (!isDrawing || !isDrawer) return;
             const pos = getCanvasPos(e);
-            ctx.lineTo(pos.x, pos.y);
-            ctx.strokeStyle = currentColor;
-            ctx.lineWidth = currentWidth;
-            ctx.lineCap = 'round';
-            ctx.stroke();
+            ctx.lineTo(pos.x, pos.y); ctx.strokeStyle = currentColor; ctx.lineWidth = currentWidth; ctx.lineCap = 'round'; ctx.stroke();
             socket.emit('draw', { type: 'draw', x: pos.x, y: pos.y, color: currentColor, width: currentWidth });
-        }
+        });
 
-        function stopDrawing() { isDrawing = false; }
+        canvas.addEventListener('mouseup', () => isDrawing = false);
+        canvas.addEventListener('mouseleave', () => isDrawing = false);
+
         function getCanvasPos(e) {
             const rect = canvas.getBoundingClientRect();
             return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -803,29 +1018,27 @@ function getHTMLContent() {
         function clearCanvas() { if (isDrawer) socket.emit('clearCanvas'); }
         function fillBucket() {
             if (!isDrawer) return;
-            ctx.fillStyle = currentColor;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = currentColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
             socket.emit('fillCanvas', currentColor);
         }
 
-        socket.on('draw', (data) => {
-            if (data.type === 'start') {
-                ctx.beginPath();
-                ctx.moveTo(data.x, data.y);
-            } else if (data.type === 'draw') {
-                ctx.lineTo(data.x, data.y);
-                ctx.strokeStyle = data.color;
-                ctx.lineWidth = data.width;
-                ctx.lineCap = 'round';
-                ctx.stroke();
-            }
+        function sendLike() {
+            socket.emit('sendLike');
+        }
+
+        socket.on('likeEffect', (d) => {
+            const effect = document.getElementById('like-effect');
+            effect.innerText = \`👍 \${d.sender}\`;
+            effect.style.display = 'block';
+            setTimeout(() => { effect.style.display = 'none'; }, 1200);
         });
 
-        socket.on('clearCanvas', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
-        socket.on('fillCanvas', (color) => {
-            ctx.fillStyle = color;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        socket.on('draw', (d) => {
+            if (d.type === 'start') { ctx.beginPath(); ctx.moveTo(d.x, d.y); }
+            else { ctx.lineTo(d.x, d.y); ctx.strokeStyle = d.color; ctx.lineWidth = d.width; ctx.lineCap = 'round'; ctx.stroke(); }
         });
+        socket.on('clearCanvas', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
+        socket.on('fillCanvas', (c) => { ctx.fillStyle = c; ctx.fillRect(0, 0, canvas.width, canvas.height); });
 
         socket.on('updateLobbyUsers', (users) => {
             const box = document.getElementById('user-list-box');
@@ -833,7 +1046,8 @@ function getHTMLContent() {
             users.forEach(u => {
                 const item = document.createElement('div');
                 item.className = 'user-item';
-                item.innerText = (u.badge || '🌸') + ' ' + u.nickname;
+                item.style = u.borderStyle || '';
+                item.innerText = \`[\${u.title || '포키'}] \${u.badge || '🌸'} \${u.nickname} (LV.\${u.level || 1})\`;
                 box.appendChild(item);
             });
         });
@@ -842,19 +1056,15 @@ function getHTMLContent() {
             currentRoomList = roomList;
             const grid = document.getElementById('room-grid');
             grid.innerHTML = '';
-            
             roomList.forEach(r => {
                 const card = document.createElement('div');
                 card.className = 'room-card';
                 card.onclick = () => joinRoomById(r.id, r.isLocked);
                 card.innerHTML = \`
-                    <div style="font-weight:900; font-size:15px; display:flex; justify-content:space-between;">
-                        <span>#\${r.roomNum} \${r.title}</span>
-                        <span>\${r.isLocked ? '🔒' : '🔓'}</span>
+                    <div style="font-weight:900; font-size:14px; display:flex; justify-content:space-between;">
+                        <span>#\${r.roomNum} \${r.title}</span><span>\${r.isLocked ? '🔒' : '🔓'}</span>
                     </div>
-                    <div style="font-size:12px; color:#ad1457; font-weight:bold;">
-                        [주제: \${r.category.toUpperCase()}] | 인원: \${r.currentPlayers}/\${r.maxPlayers}
-                    </div>
+                    <div style="font-size:11px; color:#ad1457;">[주제: \${r.category.toUpperCase()}] | 인원: \${r.currentPlayers}/\${r.maxPlayers}</div>
                 \`;
                 grid.appendChild(card);
             });
@@ -862,18 +1072,14 @@ function getHTMLContent() {
 
         function sendLobbyChat() {
             const input = document.getElementById('lobby-chat-input');
-            if (input.value.trim() !== '') {
-                socket.emit('lobbyChat', input.value.trim());
-                input.value = '';
-            }
+            if (input.value.trim()) { socket.emit('lobbyChat', input.value.trim()); input.value = ''; }
         }
 
-        socket.on('lobbyChat', (data) => {
+        socket.on('lobbyChat', (d) => {
             const box = document.getElementById('lobby-chat');
             const msg = document.createElement('div');
-            msg.innerText = \`[\${data.sender}]: \${data.text}\`;
-            box.appendChild(msg);
-            box.scrollTop = box.scrollHeight;
+            msg.innerText = \`[\${d.sender}]: \${d.text}\`;
+            box.appendChild(msg); box.scrollTop = box.scrollHeight;
         });
 
         function openCreateRoomModal() { document.getElementById('create-room-modal').style.display = 'flex'; }
@@ -883,33 +1089,25 @@ function getHTMLContent() {
             const title = document.getElementById('room-title-input').value.trim();
             const password = document.getElementById('room-pass-input').value.trim();
             const maxPlayers = document.getElementById('room-max-select').value;
+            const maxRounds = document.getElementById('room-rounds-select').value;
             const roundTime = document.getElementById('room-time-select').value;
             const category = document.getElementById('room-cate-select').value;
-
-            socket.emit('createRoom', { title, password, maxPlayers, roundTime, category });
+            socket.emit('createRoom', { title, password, maxPlayers, maxRounds, roundTime, category });
             closeCreateRoomModal();
         }
 
-        socket.on('roomCreated', ({ roomId, password }) => {
-            socket.emit('joinRoom', { roomId, password });
-        });
+        socket.on('roomCreated', ({ roomId, password }) => socket.emit('joinRoom', { roomId, password }));
 
         function joinRoomById(roomId, isLocked) {
-            let password = '';
-            if (isLocked) {
-                password = prompt('비밀번호를 입력해 주세요:');
-                if (password === null) return;
-            }
+            let password = isLocked ? prompt('비밀번호 입력:') : '';
+            if (isLocked && password === null) return;
             socket.emit('joinRoom', { roomId, password });
         }
 
         function quickJoin() {
             const available = currentRoomList.find(r => !r.isLocked && r.currentPlayers < r.maxPlayers);
-            if (available) {
-                socket.emit('joinRoom', { roomId: available.id, password: '' });
-            } else {
-                alert('입장 가능한 공개 방이 없습니다.');
-            }
+            if (available) socket.emit('joinRoom', { roomId: available.id, password: '' });
+            else alert('입장 가능한 공개 방이 없습니다.');
         }
 
         socket.on('roomJoined', (room) => {
@@ -918,10 +1116,8 @@ function getHTMLContent() {
             document.getElementById('game-room-title').innerText = room.title;
         });
 
-        socket.on('joinError', (msg) => alert(msg));
-
         function confirmLeaveRoom() {
-            if (confirm("정말 게임 방에서 나가시겠습니까?")) {
+            if (confirm("퇴장하시겠습니까?")) {
                 socket.emit('leaveRoom');
                 document.getElementById('game-screen').style.display = 'none';
                 document.getElementById('lobby-screen').style.display = 'flex';
@@ -934,7 +1130,8 @@ function getHTMLContent() {
             players.forEach(p => {
                 const card = document.createElement('div');
                 card.className = 'player-card';
-                card.innerHTML = \`<span>\${p.name}</span><span style="color:#d81b60;">\${p.score}pt</span>\`;
+                card.style = p.borderStyle || '';
+                card.innerHTML = \`<span>\${p.badge || ''} \${p.name}</span><span style="color:#d81b60;">\${p.score}pt</span>\`;
                 list.appendChild(card);
             });
         });
@@ -943,66 +1140,36 @@ function getHTMLContent() {
             isDrawer = data.isDrawer;
             document.getElementById('word-disp').innerText = data.word;
             document.getElementById('round-disp').innerText = data.round;
-
-            const chatInput = document.getElementById('game-chat-input');
-            const chatBtn = document.getElementById('game-chat-btn');
-
+            document.getElementById('max-round-disp').innerText = data.maxRounds;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            const overlay = document.getElementById('answer-overlay');
             if (isDrawer) {
-                chatInput.disabled = true;
-                chatBtn.disabled = true;
-                chatInput.placeholder = "🎨 당신이 출제자입니다!";
-
-                const overlay = document.getElementById('answer-overlay');
-                document.getElementById('overlay-text').innerHTML = "🎨 당신이 출제자입니다!<br>제시어를 보고 그려주세요!";
-                overlay.style.display = 'block';
-                setTimeout(() => { overlay.style.display = 'none'; }, 2800);
-            } else {
-                chatInput.disabled = false;
-                chatBtn.disabled = false;
-                chatInput.placeholder = "정답 입력...";
+                document.getElementById('overlay-text').innerHTML = "🎨 출제자입니다!<br>그림을 그려주세요!";
+                overlay.style.display = 'block'; setTimeout(() => overlay.style.display = 'none', 2000);
             }
         });
 
-        socket.on('timerUpdate', (time) => {
-            document.getElementById('timer-disp').innerText = time;
-        });
-
-        socket.on('correctAnswerOverlay', (data) => {
-            playCorrectSound();
-
+        socket.on('timerUpdate', (t) => document.getElementById('timer-disp').innerText = t);
+        socket.on('correctAnswerOverlay', (d) => {
             const overlay = document.getElementById('answer-overlay');
-            document.getElementById('overlay-text').innerText = \`🎉 \${data.winner}님 정답!\`;
-            overlay.style.display = 'block';
-            setTimeout(() => { overlay.style.display = 'none'; }, 2000);
+            document.getElementById('overlay-text').innerText = \`🎉 \${d.winner}님 정답!\`;
+            overlay.style.display = 'block'; setTimeout(() => overlay.style.display = 'none', 1800);
         });
 
         function sendGameChat() {
             const input = document.getElementById('game-chat-input');
-            if (input.value.trim() !== '') {
-                socket.emit('chatMessage', input.value.trim());
-                input.value = '';
-            }
+            if (input.value.trim()) { socket.emit('chatMessage', input.value.trim()); input.value = ''; }
         }
 
-        socket.on('chatMessage', (data) => {
+        socket.on('chatMessage', (d) => {
             const box = document.getElementById('game-chat');
             const msg = document.createElement('div');
-            if (data.sender.includes('SYSTEM')) {
-                msg.style.color = '#d81b60';
-                msg.style.fontWeight = 'bold';
-            } else {
-                msg.style.color = '#4a148c';
-            }
-            msg.innerText = \`[\${data.sender}]: \${data.text}\`;
-            box.appendChild(msg);
-            box.scrollTop = box.scrollHeight;
+            msg.innerText = \`[\${d.sender}]: \${d.text}\`;
+            box.appendChild(msg); box.scrollTop = box.scrollHeight;
         });
 
-        socket.on('gameOver', (rankings) => {
-            alert(\`🏆 파티 종료! 1위: \${rankings[0].name} (\${rankings[0].score}점)\`);
-        });
+        socket.on('gameOver', (rankings) => alert(\`🏆 게임 종료! 1위: \${rankings[0].name} (\${rankings[0].score}점)\`));
     </script>
 </body>
 </html>`;
@@ -1010,7 +1177,7 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` Poki Party (ポ키パティ！！) 서버 가동 완료!`);
-    console.log(` JSON 데이터베이스 파일 연동 완료 (usersDB / wordsDB)`);
+    console.log(` Poki Party (ポキパティ！！) 서버 가동 성공!`);
+    console.log(` wordsDB.json 단어 목록 완벽 연동 완료!`);
     console.log(`=================================================`);
 });
