@@ -48,15 +48,13 @@ function loadWordsDB() {
             data = JSON.parse(fs.readFileSync(WORDS_DB_PATH, 'utf8'));
         }
 
-        // 전달받은 데이터 세팅 및 기본 추가 카테고리 보완
         data.food = data.food || [];
         data.anime = data.anime || [];
         data.meme = data.meme || [];
         data.lol = data.lol || [];
-        data.game = data.game || ['포켓몬스터', '마인크래프트', '메이플스토리', '원신', '스타크래프트', '오버워치', '로블록스'];
-        data.object = data.object || ['시계', '냉장고', '선풍기', '스마트폰', '의자', '연필', '지우개', '안경'];
+        data.game = data.game || ['카데나', '메르세데스', '신궁', '루미너스', '라라', '엔젤릭버스터', '끝없는고통', '리스트레인트링', '컨티뉴어스링', '메이린', '레테', '아델', '카이저', '제논', '은월', '와일드헌터', '블래스터', '칼리', '아크', '데몬슬레이어', '메카닉', '스트라이커', '윈드브레이커', '섀도어', '나이트로드', '듀얼블레이드', '플레임위자드', '비숍', '팔라딘', '패스파인더', '야생의포효', '급속성장', '혼절시키기', '마술사의수습생', '혈법사탈노스', '에드윈벤클리프', '파멸의예언자', '티리온폴드링', '말리고스', '화염구', '마법차', '난투', '폭발의덫', '사술', '퀘스트중인모험가', '생각훔치기', '뒤틀린황천', '배틀메이', '왕의축', '불기둥', '야생의벗', '그롬마쉬헬스크림', '휘둘러치', '압도적인힘', '시체되살리기', '난투', '걸신들린무타누', '평등', '데스윙', '제왕타우릿산', '크림슨발록', '일리움', '보우마스터', '가젯잔경매인', '질리악스', '리로이젠킨스', '얼음회오리', '비겁한밀고자', '장의사', '흑기사', '두억시', '자쿰', '혼테일', '핑크빈', '진힐라', '더스크', '루시드', '칼로스', '세렌', '카링', '가디언엔젤슬라임', '우서', '안두인', '제이나', '굴단', '발리라', '말퓨리온', '일리단', '가로쉬', '이글거리는전쟁도끼', '그림자밟기', '마음가짐', '렉사르', '해적패치스', '정신자극', '얼음방패', '리노잭슨', '대마법사안토니다스', '스랄', '파풀라투스', '데미안', '스우', '아카이럼', '벨룸', '듄켈',];
+        data.object = data.object || ['시계', '포크레인', '에어컨', '김치냉장고', '엉덩이', '가슴', '분쇄기', '인형', '하츠네미쿠인형', '릴', '아이코스', '마일드세븐', '전자담배', '유산균', '냉장고', '선풍기', '스마트폰', '의자', '연필', '지우개', '안경'];
 
-        // 전체 카테고리 병합
         data.all = Array.from(new Set([
             ...data.food, ...data.anime, ...data.meme,
             ...data.lol, ...data.game, ...data.object
@@ -81,24 +79,23 @@ const lobbyUsers = {};
 const rooms = {};
 let roomCounter = 500;
 
-// 상점 아이템 데이터 정의
 const SHOP_ITEMS = {
     titles: [
-        { id: 't_newbie', name: '신입 포키', price: 0, reqLevel: 1 },
-        { id: 't_painter', name: '방구석 화가', price: 150, reqLevel: 1 },
-        { id: 't_picasso', name: '피카소의 후예', price: 400, reqLevel: 3 },
-        { id: 't_god', name: '그림의 신', price: 1000, reqLevel: 5 }
+        { id: 't_newbie', name: '신입', price: 0, reqLevel: 1 },
+        { id: 't_painter', name: '그림쟁이', price: 30000, reqLevel: 1 },
+        { id: 't_picasso', name: '아티스트', price: 100000, reqLevel: 3 },
+        { id: 't_god', name: '예술', price: 1000000, reqLevel: 5 }
     ],
     badges: [
         { id: 'b_default', name: '🔰 새싹', icon: '🔰', price: 0 },
-        { id: 'b_cat', name: '🐱 야옹이', icon: '🐱', price: 200 },
-        { id: 'b_crown', name: '👑 왕관', icon: '👑', price: 500 },
-        { id: 'b_fire', name: '🔥 불꽃', icon: '🔥', price: 800 }
+        { id: 'b_cat', name: '🐱 야옹이', icon: '🐱', price: 20000 },
+        { id: 'b_crown', name: '👑 왕관', icon: '👑', price: 50000 },
+        { id: 'b_fire', name: '🔥 불꽃', icon: '🔥', price: 80000 }
     ],
     borders: [
         { id: 'brd_none', name: '기본 테두리', style: 'border: 2px solid #ea80fc;', price: 0 },
-        { id: 'brd_gold', name: '골드 핑크 테두리', style: 'border: 3px solid #ffd700; box-shadow: 0 0 8px #ff4081;', price: 300 },
-        { id: 'brd_neon', name: '네온 퍼플 테두리', style: 'border: 3px solid #00e5ff; box-shadow: 0 0 10px #aa00ff;', price: 600 }
+        { id: 'brd_gold', name: '골드 핑크 테두리', style: 'border: 3px solid #ffd700; box-shadow: 0 0 8px #ff4081;', price: 80000 },
+        { id: 'brd_neon', name: '네온 퍼플 테두리', style: 'border: 3px solid #00e5ff; box-shadow: 0 0 10px #aa00ff;', price: 155700 }
     ]
 };
 
@@ -110,7 +107,6 @@ app.get('*', (req, res) => {
 io.on('connection', (socket) => {
     let currentUser = { id: socket.id, username: '', nickname: '', roomId: null, lastMsgTime: 0, lastMsgText: '' };
 
-    // 1. 회원가입
     socket.on('register', ({ username, password, nickname }) => {
         const nickRegex = /^[a-zA-Z0-9가-힣]{2,8}$/;
         if (!nickRegex.test(nickname)) {
@@ -133,7 +129,7 @@ io.on('connection', (socket) => {
             points: 200,
             exp: 0,
             level: 1,
-            title: '신입 포키',
+            title: '신입',
             badge: '🔰',
             borderStyle: 'border: 2px solid #ea80fc;',
             inventory: ['t_newbie', 'b_default', 'brd_none']
@@ -143,7 +139,6 @@ io.on('connection', (socket) => {
         socket.emit('authSuccess', { message: '회원가입이 완료되었습니다! 로그인해 주세요.' });
     });
 
-    // 2. 로그인
     socket.on('login', ({ username, password }) => {
         const user = usersDB[username];
         
@@ -166,7 +161,6 @@ io.on('connection', (socket) => {
         socket.emit('updateRoomList', getPublicRoomList());
     });
 
-    // 3. 상점 아이템 구매
     socket.on('buyItem', ({ itemType, itemId }) => {
         const user = usersDB[currentUser.username];
         if (!user) return;
@@ -188,7 +182,6 @@ io.on('connection', (socket) => {
         socket.emit('shopSuccess', { message: `'${item.name}' 구매 완료!`, user });
     });
 
-    // 4. 아이템 장착
     socket.on('equipItem', ({ itemType, itemId }) => {
         const user = usersDB[currentUser.username];
         if (!user || !user.inventory.includes(itemId)) return;
@@ -217,7 +210,6 @@ io.on('connection', (socket) => {
         io.emit('lobbyChat', { sender: currentUser.nickname, text: msg });
     });
 
-    // 5. 방 생성
     socket.on('createRoom', (roomConfig) => {
         roomCounter++;
         const roomId = 'ROOM_' + roomCounter;
@@ -264,7 +256,7 @@ io.on('connection', (socket) => {
             name: currentUser.nickname, 
             score: 0, 
             username: currentUser.username,
-            title: user.title || '신입 포키',
+            title: user.title || '신입',
             badge: user.badge || '🔰',
             borderStyle: user.borderStyle || ''
         };
@@ -285,7 +277,6 @@ io.on('connection', (socket) => {
     socket.on('clearCanvas', () => { if (currentUser.roomId) io.to(currentUser.roomId).emit('clearCanvas'); });
     socket.on('fillCanvas', (color) => { if (currentUser.roomId) io.to(currentUser.roomId).emit('fillCanvas', color); });
 
-    // 6. 따봉(👍) 기능
     socket.on('sendLike', () => {
         const roomId = currentUser.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -295,12 +286,12 @@ io.on('connection', (socket) => {
         const drawer = room.players[room.drawerIndex];
         
         if (drawer && drawer.id === socket.id) {
-            socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 자신의 그림에는 따봉을 누를 수 없습니다!' });
+            socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 자신의 그림에는 개추를 누를 수 없습니다!' });
             return;
         }
 
         if (room.likedPlayers.includes(socket.id)) {
-            socket.emit('chatMessage', { sender: 'SYSTEM', text: '⚠️ 이번 라운드에는 이미 따봉을 눌렀습니다.' });
+            socket.emit('chatMessage', { sender: 'SYSTEM', text: '⚠️ 이번 라운드에는 이미 개추를 눌렀습니다.' });
             return;
         }
 
@@ -319,10 +310,13 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('likeEffect', { sender: currentUser.nickname });
         io.to(roomId).emit('chatMessage', { 
             sender: 'SYSTEM 👍', 
-            text: `${currentUser.nickname} 님이 출제자에게 따봉을 날렸습니다! (출제자 +20pt)` 
+            text: `${currentUser.nickname} 님이 출제자에게 개추를 박았습니다! (출제자 +20pt)` 
         });
     });
 
+    // ==========================================
+    // 🎯 [핵심] 점수 차등 계산 및 DB 연동 로직
+    // ==========================================
     socket.on('chatMessage', (msg) => {
         const roomId = currentUser.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -346,15 +340,27 @@ io.on('connection', (socket) => {
             if (player) {
                 room.solvedPlayers.push(socket.id);
 
-                const points = Math.max(150 - (room.solvedPlayers.length - 1) * 30, 50);
-                player.score += points;
-                if (drawer) drawer.score += 30;
+                // 1. 등수 기반 기본 점수 (1등: 150점, 2등: 130점, 3등: 110점...)
+                const solveOrder = room.solvedPlayers.length; // 1, 2, 3...
+                const baseScore = Math.max(150 - (solveOrder - 1) * 20, 50);
 
+                // 2. 제한시간 비율 계산 (남은 시간 / 전체 라운드 시간)
+                const timeRatio = room.timeLeft / room.roundTime;
+
+                // 3. 최종 차등 점수 산출 (최소 30점 보장)
+                const earnedScore = Math.max(Math.floor(baseScore * (0.5 + timeRatio * 0.5)), 30);
+
+                // 인게임 룸 점수 반영
+                player.score += earnedScore;
+                if (drawer) drawer.score += 20; // 정답자가 나올 때마다 출제자도 보너스
+
+                // 4. 유저 DB(usersDB.json) 개인 계정 포인트 & 경험치 적립
                 if (usersDB[currentUser.username]) {
                     const u = usersDB[currentUser.username];
-                    u.points += Math.floor(points / 2);
-                    u.exp += 30;
+                    u.points += earnedScore; // 맞힌 차등 점수가 그대로 개인 어카운트 포인트로 적립!
+                    u.exp += Math.floor(earnedScore * 0.8);
 
+                    // 레벨업 체크
                     const neededExp = u.level * 100;
                     if (u.exp >= neededExp) {
                         u.exp -= neededExp;
@@ -362,15 +368,17 @@ io.on('connection', (socket) => {
                         socket.emit('chatMessage', { sender: 'SYSTEM 🎊', text: `축하합니다! 레벨이 상승하여 [LV.${u.level}] 이 되었습니다!` });
                     }
                     saveUsersDB(usersDB);
+                    socket.emit('profileUpdated', u); // 프로필 UI 최신화
                 }
 
                 io.to(roomId).emit('updatePlayers', room.players);
                 io.to(roomId).emit('correctAnswerOverlay', { winner: currentUser.nickname, word: room.currentWord });
                 io.to(roomId).emit('chatMessage', { 
-                    sender: 'SYSTEM', 
-                    text: `🎉 [정답!] ${currentUser.nickname} 님이 정답(${room.currentWord})을 맞히셨습니다! (+${points}pt)` 
+                    sender: 'SYSTEM 🎉', 
+                    text: `[${solveOrder}등 정답!] ${currentUser.nickname} 님 정답(${room.currentWord})! (+${earnedScore}pt 획득)` 
                 });
 
+                // 모든 플레이어가 맞힌 경우 다음 턴으로 즉시 전환
                 if (room.solvedPlayers.length >= room.players.length - 1) {
                     nextTurn(roomId);
                 }
@@ -454,6 +462,7 @@ function nextTurn(roomId) {
         room.isPlaying = false;
         const sorted = [...room.players].sort((a, b) => b.score - a.score);
         
+        // 최종 1등 유저에게 추가 우승 상금 적립
         if (sorted[0] && usersDB[sorted[0].username]) {
             usersDB[sorted[0].username].points += 300;
             usersDB[sorted[0].username].exp += 100;
@@ -645,7 +654,7 @@ function getHTMLContent() {
 <body>
 
     <div id="loading-overlay">
-        <div class="loading-title">포키파티에 오신것을 환영합니다 !</div>
+        <div class="loading-title">포키파티에 오신것을 진심으로 환영합니다 !</div>
         <div class="spinner"></div>
     </div>
 
@@ -720,7 +729,7 @@ function getHTMLContent() {
                 <div class="pixel-box" id="my-profile">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span id="my-badge" style="font-size:18px;">🔰</span>
-                        <span class="profile-badge" id="my-title">신입 포키</span>
+                        <span class="profile-badge" id="my-title">신입</span>
                     </div>
                     <div id="my-name-display" style="font-weight:900; font-size:15px; color:#880e4f;">포키가이</div>
                     <div style="font-size:11px; color:#ad1457; font-weight:bold;">
@@ -839,7 +848,7 @@ function getHTMLContent() {
                         <button class="tool-btn" onclick="fillBucket()">🪣</button>
                         <button class="tool-btn" onclick="useEraser()">🧹</button>
                         <button class="tool-btn" onclick="clearCanvas()" style="background:#ffebee;">❌</button>
-                        <button class="tool-btn" onclick="sendLike()" style="background:#fff9c4; border-color:#fbc02d;">👍 따봉</button>
+                        <button class="tool-btn" onclick="sendLike()" style="background:#fff9c4; border-color:#fbc02d;">👍 개추</button>
                     </div>
                 </div>
             </div>
@@ -1178,6 +1187,6 @@ function getHTMLContent() {
 server.listen(PORT, () => {
     console.log(`=================================================`);
     console.log(` Poki Party (ポキパティ！！) 서버 가동 성공!`);
-    console.log(` wordsDB.json 단어 목록 완벽 연동 완료!`);
+    console.log(` 점수 차등제 & 유저 DB 개인 포인트 연동 완료!`);
     console.log(`=================================================`);
 });
