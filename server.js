@@ -118,7 +118,6 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // 최신 DB 상태 재로드 후 검증
         usersDB = loadUsersDB();
         if (usersDB[username]) {
             socket.emit('authError', '이미 존재하는 아이디입니다.');
@@ -142,7 +141,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('login', ({ username, password }) => {
-        usersDB = loadUsersDB(); // DB 동기화
+        usersDB = loadUsersDB();
         const user = usersDB[username];
         
         if (!user) {
@@ -227,7 +226,7 @@ io.on('connection', (socket) => {
             maxPlayers: parseInt(roomConfig.maxPlayers) || 6,
             roundTime: parseInt(roomConfig.roundTime) || 60,
             category: roomConfig.category || 'all',
-            hostId: socket.id, // 방장 설정
+            hostId: socket.id,
             players: [],
             drawerIndex: -1,
             currentWord: '',
@@ -276,7 +275,6 @@ io.on('connection', (socket) => {
         io.emit('updateRoomList', getPublicRoomList());
     });
 
-    // 🎯 방장에 의한 수동 게임 시작
     socket.on('requestStartGame', () => {
         const roomId = currentUser.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -424,7 +422,6 @@ function leaveCurrentRoom(socket) {
             room.players.splice(playerIndex, 1);
             socket.leave(roomId);
 
-            // 방장이 나간 경우 다음 사람에게 방장 위임
             if (room.hostId === socket.id && room.players.length > 0) {
                 room.hostId = room.players[0].id;
             }
@@ -459,7 +456,6 @@ function startGame(roomId) {
     room.currentRound = 1;
     room.drawerIndex = -1;
     
-    // 점수 초기화
     room.players.forEach(p => p.score = 0);
     io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId });
     io.emit('updateRoomList', getPublicRoomList());
@@ -634,8 +630,9 @@ function getHTMLContent() {
             color: #d81b60; font-size: 22px; font-weight: 900; letter-spacing: 4px; font-family: 'DungGeunMo';
         }
 
-        #game-main { display: flex; gap: 10px; }
-        #game-players { width: 220px; padding: 6px; background: #fff0f5; display: flex; flex-direction: column; justify-content: space-between; }
+        /* 🔧 채팅 영역 수정을 위한 CSS 커스텀 영역 */
+        #game-main { display: flex; gap: 10px; align-items: flex-start; }
+        #game-players { width: 220px; height: 440px; padding: 6px; background: #fff0f5; display: flex; flex-direction: column; justify-content: space-between; }
         .player-card { background: #fff; padding: 6px; margin-bottom: 6px; border-radius: 6px; display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; }
 
         #canvas-container { flex: 1; display: flex; flex-direction: column; align-items: center; }
@@ -654,8 +651,9 @@ function getHTMLContent() {
         }
         .tool-btn:hover { background: #e1bee7; }
 
-        #game-chat-box { width: 240px; display: flex; flex-direction: column; }
-        #game-chat { flex: 1; height: 350px; background: #fff; overflow-y: auto; padding: 6px; font-size: 12px; border: 2px solid #f06292; }
+        /* 🎯 채팅박스 및 내부 스크롤 고정 핵심 수정 코드 */
+        #game-chat-box { width: 240px; height: 440px; display: flex; flex-direction: column; }
+        #game-chat { flex: 1; background: #fff; overflow-y: auto; padding: 6px; font-size: 12px; border: 2px solid #f06292; word-break: break-all; }
 
         #answer-overlay {
             position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
@@ -850,11 +848,10 @@ function getHTMLContent() {
 
         <div id="game-main">
             <div class="pixel-box" id="game-players">
-                <div>
+                <div style="overflow-y:auto; flex:1;">
                     <div class="window-header" style="font-size:11px;">PLAYERS</div>
                     <div id="game-player-list" style="margin-top:6px;"></div>
                 </div>
-                <!-- 🎯 방장 전용 게임 시작 버튼 -->
                 <button id="start-game-btn" class="tool-btn" onclick="requestStartGame()" style="display:none; width:100%; margin-top:10px; background:#4caf50; color:#fff; font-size:14px; padding:8px;">▶️ 게임 시작</button>
             </div>
 
@@ -985,21 +982,21 @@ function getHTMLContent() {
                 const card = document.createElement('div');
                 card.className = 'shop-item-card';
 
-                let reqInfo = item.reqLevel ? \` [LV.\${item.reqLevel} 이상]\` : '';
+                let reqInfo = item.reqLevel ? ` [LV.${item.reqLevel} 이상]` : '';
 
                 let actionBtn = '';
                 if (isOwned) {
-                    actionBtn = \`<button class="tool-btn" onclick="equipItem('\${currentShopTab}', '\${item.id}')" style="background:#81c784; color:#fff;">장착</button>\`;
+                    actionBtn = `<button class="tool-btn" onclick="equipItem('${currentShopTab}', '${item.id}')" style="background:#81c784; color:#fff;">장착</button>`;
                 } else {
-                    actionBtn = \`<button class="tool-btn" onclick="buyItem('\${currentShopTab}', '\${item.id}')" style="background:#ff80ab; color:#fff;">구매 (\${item.price}pt)</button>\`;
+                    actionBtn = `<button class="tool-btn" onclick="buyItem('${currentShopTab}', '${item.id}')" style="background:#ff80ab; color:#fff;">구매 (${item.price}pt)</button>`;
                 }
 
-                card.innerHTML = \`
+                card.innerHTML = `
                     <div>
-                        <div style="font-weight:bold; font-size:13px; color:#4a148c;">\${item.name}\${reqInfo}</div>
+                        <div style="font-weight:bold; font-size:13px; color:#4a148c;">${item.name}${reqInfo}</div>
                     </div>
-                    \${actionBtn}
-                \`;
+                    ${actionBtn}
+                `;
                 container.appendChild(card);
             });
         }
@@ -1062,7 +1059,7 @@ function getHTMLContent() {
 
         socket.on('likeEffect', (d) => {
             const effect = document.getElementById('like-effect');
-            effect.innerText = \`👍 \${d.sender}\`;
+            effect.innerText = `👍 ${d.sender}`;
             effect.style.display = 'block';
             setTimeout(() => { effect.style.display = 'none'; }, 1200);
         });
@@ -1081,7 +1078,7 @@ function getHTMLContent() {
                 const item = document.createElement('div');
                 item.className = 'user-item';
                 item.style = u.borderStyle || '';
-                item.innerText = \`[\${u.title || '신입'}] \${u.badge || '🔰'} \${u.nickname} (LV.\${u.level || 1})\`;
+                item.innerText = `[${u.title || '신입'}] ${u.badge || '🔰'} ${u.nickname} (LV.${u.level || 1})`;
                 box.appendChild(item);
             });
         });
@@ -1094,12 +1091,12 @@ function getHTMLContent() {
                 const card = document.createElement('div');
                 card.className = 'room-card';
                 card.onclick = () => joinRoomById(r.id, r.isLocked);
-                card.innerHTML = \`
+                card.innerHTML = `
                     <div style="font-weight:900; font-size:14px; display:flex; justify-content:space-between;">
-                        <span>#\${r.roomNum} \${r.title}</span><span>\${r.isLocked ? '🔒' : '🔓'}\${r.isPlaying ? ' [게임 중]' : ''}</span>
+                        <span>#${r.roomNum} ${r.title}</span><span>${r.isLocked ? '🔒' : '🔓'}${r.isPlaying ? ' [게임 중]' : ''}</span>
                     </div>
-                    <div style="font-size:11px; color:#ad1457;">[주제: \${r.category.toUpperCase()}] | 인원: \${r.currentPlayers}/\${r.maxPlayers}</div>
-                \`;
+                    <div style="font-size:11px; color:#ad1457;">[주제: ${r.category.toUpperCase()}] | 인원: ${r.currentPlayers}/${r.maxPlayers}</div>
+                `;
                 grid.appendChild(card);
             });
         });
@@ -1112,7 +1109,7 @@ function getHTMLContent() {
         socket.on('lobbyChat', (d) => {
             const box = document.getElementById('lobby-chat');
             const msg = document.createElement('div');
-            msg.innerText = \`[\${d.sender}]: \${d.text}\`;
+            msg.innerText = `[${d.sender}]: ${d.text}`;
             box.appendChild(msg); box.scrollTop = box.scrollHeight;
         });
 
@@ -1170,11 +1167,10 @@ function getHTMLContent() {
                 card.className = 'player-card';
                 card.style = p.borderStyle || '';
                 const isHostTag = (p.id === hostId) ? ' 👑' : '';
-                card.innerHTML = \`<span>\${p.badge || ''} \${p.name}\${isHostTag}</span><span style="color:#d81b60;">\${p.score}pt</span>\`;
+                card.innerHTML = `<span>${p.badge || ''} ${p.name}${isHostTag}</span><span style="color:#d81b60;">${p.score}pt</span>`;
                 list.appendChild(card);
             });
 
-            // 내가 방장이면 시작 버튼 표시
             const startBtn = document.getElementById('start-game-btn');
             if (socket.id === hostId) {
                 startBtn.style.display = 'block';
@@ -1200,7 +1196,7 @@ function getHTMLContent() {
         socket.on('timerUpdate', (t) => document.getElementById('timer-disp').innerText = t);
         socket.on('correctAnswerOverlay', (d) => {
             const overlay = document.getElementById('answer-overlay');
-            document.getElementById('overlay-text').innerText = \`🎉 \${d.winner}님 정답!\`;
+            document.getElementById('overlay-text').innerText = `🎉 ${d.winner}님 정답!`;
             overlay.style.display = 'block'; setTimeout(() => overlay.style.display = 'none', 1800);
         });
 
@@ -1212,11 +1208,11 @@ function getHTMLContent() {
         socket.on('chatMessage', (d) => {
             const box = document.getElementById('game-chat');
             const msg = document.createElement('div');
-            msg.innerText = \`[\${d.sender}]: \${d.text}\`;
+            msg.innerText = `[${d.sender}]: ${d.text}`;
             box.appendChild(msg); box.scrollTop = box.scrollHeight;
         });
 
-        socket.on('gameOver', (rankings) => alert(\`🏆 게임 종료! 1위: \${rankings[0].name} (\${rankings[0].score}점)\`));
+        socket.on('gameOver', (rankings) => alert(`🏆 게임 종료! 1위: ${rankings[0].name} (${rankings[0].score}점)`));
     </script>
 </body>
 </html>`;
@@ -1225,6 +1221,6 @@ function getHTMLContent() {
 server.listen(PORT, () => {
     console.log(`=================================================`);
     console.log(` Poki Party (ポキパティ！！) 서버 가동 성공!`);
-    console.log(` 멀티플레이어 대기실 및 계정 동기화 버그 수정 완료!`);
+    console.log(` 채팅 영역 높이 고정 및 스크롤바 버그 수정 완료!`);
     console.log(`=================================================`);
 });
