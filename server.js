@@ -44,7 +44,6 @@ function loadWordsDB() {
         const raw = fs.readFileSync(WORDS_PATH, 'utf8');
         const parsed = JSON.parse(raw);
         
-        // 전체 단어 통합 (중복 제거)
         const allWords = Array.from(new Set([
             ...(parsed.food || []),
             ...(parsed.anime || []),
@@ -63,9 +62,8 @@ function loadWordsDB() {
 let usersDB = loadUsersDB();
 let wordsDB = loadWordsDB();
 
-// 무작위 단어 추출 함수 (Fisher-Yates 기반)
+// 무작위 단어 추출 함수
 function getRandomWord(category, usedWords = []) {
-    // 제시어 JSON 다시 로드 (실시간 수정 가능)
     wordsDB = loadWordsDB();
     
     let list = wordsDB[category] || wordsDB.all;
@@ -73,7 +71,7 @@ function getRandomWord(category, usedWords = []) {
 
     let available = list.filter(w => !usedWords.includes(w));
     if (available.length === 0) {
-        available = list; // 모두 소비했으면 리셋
+        available = list;
         usedWords.length = 0;
     }
 
@@ -166,7 +164,7 @@ io.on('connection', (socket) => {
             password: roomConfig.password || '',
             maxPlayers: parseInt(roomConfig.maxPlayers) || 6,
             roundTime: parseInt(roomConfig.roundTime) || 60,
-            category: roomConfig.category || 'all', // 테마: food, anime, meme, lol, all
+            category: roomConfig.category || 'all',
             hostId: socket.id,
             players: [],
             drawerIndex: -1,
@@ -407,7 +405,6 @@ function nextTurn(roomId) {
     }
 
     const drawer = room.players[room.drawerIndex];
-    // wordsDB.json에서 해당 카테고리(room.category)의 제시어를 무작위 선택
     room.currentWord = getRandomWord(room.category, room.usedWords);
     room.timeLeft = room.roundTime;
 
@@ -439,7 +436,6 @@ function nextTurn(roomId) {
     }, 1000);
 }
 
-// 웹 페이지 제공
 app.get('/', (req, res) => {
     res.send(getHTMLContent());
 });
@@ -455,22 +451,39 @@ function getHTMLContent() {
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'MapleStory', sans-serif, cursive; }
         body { background: #fce4ec; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
         
-        #auth-screen, #lobby-screen, #game-room { display: none; width: 950px; height: 680px; background: #fff; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 4px solid #f48fb1; padding: 20px; position: relative; }
-        #auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; }
+        /* 공통 화면 클래스: 기본적으로 모두 숨김 */
+        .screen { display: none; width: 950px; height: 680px; background: #fff; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 4px solid #f48fb1; padding: 20px; position: relative; }
+        
+        /* 활성화된 화면 스타일 */
+        #auth-screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; }
+        #loading-screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: #fff0f5; }
+        #lobby-screen.active { display: flex; gap: 20px; }
+        #game-room.active { display: grid; grid-template-columns: 200px 1fr 240px; gap: 12px; height: 680px; }
 
         .input-box { width: 280px; padding: 10px; border: 2px solid #f48fb1; border-radius: 8px; outline: none; font-size: 14px; }
         .btn { padding: 10px 20px; background: #f06292; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; }
         .btn:hover { background: #ec407a; }
 
-        #lobby-screen { display: flex; gap: 20px; }
+        /* 로딩 스피너 애니메이션 */
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 6px solid #f8bbd0;
+            border-top: 6px solid #ec407a;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         .lobby-side { width: 250px; background: #fff5f8; border-radius: 12px; padding: 15px; display: flex; flex-direction: column; gap: 15px; }
         .lobby-main { flex: 1; display: flex; flex-direction: column; gap: 15px; }
         .room-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; overflow-y: auto; max-height: 480px; }
         .room-card { background: #fff; border: 2px solid #f8bbd0; border-radius: 8px; padding: 12px; cursor: pointer; transition: 0.2s; }
         .room-card:hover { border-color: #f06292; transform: translateY(-2px); }
 
-        #game-room { grid-template-columns: 200px 1fr 240px; gap: 12px; height: 680px; }
-        
         .player-list { background: #fff5f8; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
         .player-card { background: #fff; border: 2px solid #f8bbd0; padding: 8px; border-radius: 6px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
         .player-card.is-drawer { background: #fff9c4; border-color: #fbc02d; font-weight: bold; }
@@ -498,8 +511,9 @@ function getHTMLContent() {
 </head>
 <body>
 
-    <div id="auth-screen">
-        <h1 style="color: #d81b60;">🎨 Poki Party!</h1>
+    <!-- 1. 로그인 / 회원가입 화면 -->
+    <div id="auth-screen" class="screen active">
+        <h1 style="color: #d81b60; font-size: 36px;">🎨 Poki Party!</h1>
         <input type="text" id="auth-username" class="input-box" placeholder="아이디">
         <input type="password" id="auth-password" class="input-box" placeholder="비밀번호">
         <input type="text" id="auth-nickname" class="input-box" placeholder="닉네임 (회원가입 시)">
@@ -509,7 +523,15 @@ function getHTMLContent() {
         </div>
     </div>
 
-    <div id="lobby-screen">
+    <!-- 2. 로그인 후 연출용 로딩 화면 -->
+    <div id="loading-screen" class="screen">
+        <div class="spinner"></div>
+        <h2 style="color: #d81b60; font-size: 28px;">🎉 포키파티에 오신 걸 환영합니다! 🎉</h2>
+        <p style="color: #888; font-size: 15px;">로비로 이동하는 중입니다. 잠시만 기다려주세요...</p>
+    </div>
+
+    <!-- 3. 로비 화면 -->
+    <div id="lobby-screen" class="screen">
         <div class="lobby-side">
             <h3>👤 프로필</h3>
             <div id="user-profile-info" style="font-size: 13px; line-height: 1.6;"></div>
@@ -522,7 +544,8 @@ function getHTMLContent() {
         </div>
     </div>
 
-    <div id="game-room">
+    <!-- 4. 게임 룸 화면 -->
+    <div id="game-room" class="screen">
         <div class="player-list">
             <h4 style="text-align: center; color: #ad1457;">PLAYERS</h4>
             <div id="game-player-list"></div>
@@ -578,9 +601,19 @@ function getHTMLContent() {
         const canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
 
+        // 단일 화면 제어 전용 함수
+        function showScreen(targetId) {
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+            });
+            const target = document.getElementById(targetId);
+            if (target) target.classList.add('active');
+        }
+
         function handleLogin() {
             const username = document.getElementById('auth-username').value;
             const password = document.getElementById('auth-password').value;
+            if (!username || !password) return alert("아이디와 비밀번호를 모두 입력해주세요!");
             socket.emit('login', { username, password });
         }
 
@@ -588,16 +621,24 @@ function getHTMLContent() {
             const username = document.getElementById('auth-username').value;
             const password = document.getElementById('auth-password').value;
             const nickname = document.getElementById('auth-nickname').value;
+            if (!username || !password) return alert("아이디와 비밀번호를 입력해주세요!");
             socket.emit('register', { username, password, nickname });
         }
 
         socket.on('authError', msg => alert(msg));
         socket.on('authSuccess', data => alert(data.message));
 
+        // 로그인 성공 이벤트
         socket.on('loginSuccess', user => {
-            document.getElementById('auth-screen').style.display = 'none';
-            document.getElementById('lobby-screen').style.display = 'flex';
             updateProfileUI(user);
+            
+            // 1. 로딩 화면 표시
+            showScreen('loading-screen');
+
+            // 2. 1.5초 후 로비 화면으로 전환
+            setTimeout(() => {
+                showScreen('lobby-screen');
+            }, 1500);
         });
 
         function updateProfileUI(u) {
@@ -638,13 +679,11 @@ function getHTMLContent() {
         socket.on('joinError', msg => alert(msg));
 
         socket.on('roomJoined', room => {
-            document.getElementById('lobby-screen').style.display = 'none';
-            document.getElementById('game-room').style.display = 'grid';
+            showScreen('game-room');
         });
 
         socket.on('leftRoom', () => {
-            document.getElementById('game-room').style.display = 'none';
-            document.getElementById('lobby-screen').style.display = 'flex';
+            showScreen('lobby-screen');
         });
 
         function leaveRoom() { socket.emit('leaveRoom'); }
@@ -781,6 +820,6 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` Poki Party (wordsDB.json 연동 완료!) 실행 중 (Port: ${PORT})`);
+    console.log(` Poki Party (화면전환 & 로딩창 적용 완료!) Port: ${PORT}`);
     console.log(`=================================================`);
 });
