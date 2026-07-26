@@ -350,9 +350,9 @@ function getHTMLContent() {
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>ポキパティ！！ (Poki Party v1.8.1)</title>
+    <title>ポキパティ！！ (Poki Party v1.8.2)</title>
 
-    <!-- [v1.8.1 구글 둥글둥글 귀여운 폰트 불러오기] -->
+    <!-- [v1.8.2 구글 둥글둥글 귀여운 폰트] -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Jua&display=swap" rel="stylesheet">
@@ -367,7 +367,6 @@ function getHTMLContent() {
             --text-color: #4a2840;
         }
 
-        /* 둥글둥글하고 아기자기한 Jua 및 Gaegu 폰트 적용 */
         * { 
             box-sizing: border-box; 
             margin: 0; 
@@ -385,7 +384,7 @@ function getHTMLContent() {
         .pixel-box { background: var(--box-bg); border: 3px solid var(--pixel-border); box-shadow: 3px 3px 0px rgba(74, 40, 64, 0.15); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
         .box-header { background: var(--main-pink); color: #fff; padding: 6px 12px; font-size: 18px; border-bottom: 3px solid var(--pixel-border); text-shadow: 1px 1px 0px var(--pixel-border); }
 
-        .pixel-btn { background: #ffb6c1; border: 2.5px solid var(--pixel-border); color: var(--text-color); padding: 6px 14px; cursor: pointer; box-shadow: 2px 2px 0px var(--pixel-border); border-radius: 10px; font-size: 16px; transition: transform 0.05s; }
+        .pixel-btn { background: #ffb6c1; border: 2.5px solid var(--pixel-border); color: var(--text-color); padding: 8px 18px; cursor: pointer; box-shadow: 2px 2px 0px var(--pixel-border); border-radius: 10px; font-size: 17px; transition: transform 0.05s; }
         .pixel-btn:active { transform: translate(2px, 2px); box-shadow: 0px 0px 0px var(--pixel-border); }
         .pixel-btn.primary { background: #ff75a0; color: white; }
         .pixel-btn.warning { background: #ffb703; color: white; }
@@ -431,16 +430,18 @@ function getHTMLContent() {
 </head>
 <body>
 
-    <!-- [1] Auth Screen -->
+    <!-- [1] Auth Screen (로그인/회원가입 폼 v1.8.2) -->
     <div id="auth-screen" class="screen active">
         <h1 class="pixel-title">ポキパティ！！</h1>
         <p class="pixel-subtitle">~ 포키의 놀이터 ~</p>
-        <input type="text" id="auth-username" style="width:260px; padding:8px; border:2.5px solid var(--pixel-border); border-radius:10px; font-size:16px;" placeholder="아이디">
-        <input type="password" id="auth-password" style="width:260px; padding:8px; border:2.5px solid var(--pixel-border); border-radius:10px; font-size:16px;" placeholder="비밀번호">
-        <input type="text" id="auth-nickname" style="width:260px; padding:8px; border:2.5px solid var(--pixel-border); border-radius:10px; font-size:16px;" placeholder="닉네임 (회원가입시)">
-        <div style="display: flex; gap: 10px; margin-top: 5px;">
-            <button class="pixel-btn primary" onclick="handleLogin()">로그인</button>
-            <button class="pixel-btn warning" onclick="handleRegister()">회원가입</button>
+        <div style="display:flex; flex-direction:column; gap:8px; width:280px;">
+            <input type="text" id="auth-username" style="padding:10px; border:2.5px solid var(--pixel-border); border-radius:10px; font-size:16px;" placeholder="아이디">
+            <input type="password" id="auth-password" style="padding:10px; border:2.5px solid var(--pixel-border); border-radius:10px; font-size:16px;" placeholder="비밀번호">
+            <input type="text" id="auth-nickname" style="padding:10px; border:2.5px solid var(--pixel-border); border-radius:10px; font-size:16px;" placeholder="닉네임 (회원가입시)">
+            <div style="display: flex; gap: 10px; margin-top: 6px; justify-content: center;">
+                <button type="button" id="login-btn" class="pixel-btn primary" style="flex:1;">로그인</button>
+                <button type="button" id="register-btn" class="pixel-btn warning" style="flex:1;">회원가입</button>
+            </div>
         </div>
     </div>
 
@@ -552,7 +553,7 @@ function getHTMLContent() {
 
     <div id="shop-modal" class="modal">
         <div class="modal-content" style="width: 420px; max-height: 550px;">
-            <h3 style="color: var(--dark-pink);">🛒 v1.8.1 포인트 상점</h3>
+            <h3 style="color: var(--dark-pink);">🛒 v1.8.2 포인트 상점</h3>
             <div style="display:flex; gap:10px; margin-bottom:6px;">
                 <button class="pixel-btn primary" onclick="renderShopCategory('badges')">뱃지 목록</button>
                 <button class="pixel-btn warning" onclick="renderShopCategory('colors')">닉네임 색상</button>
@@ -599,20 +600,28 @@ function getHTMLContent() {
             document.getElementById(id).classList.add('active');
         }
 
-        function handleLogin() {
-            const username = document.getElementById('auth-username').value;
-            const password = document.getElementById('auth-password').value;
-            if (!username || !password) return alert("아이디/비밀번호를 입력해 주세요.");
+        // [v1.8.2 클릭 및 로그인/회원가입 처리 완전 복구]
+        document.getElementById('login-btn').addEventListener('click', function() {
+            const username = document.getElementById('auth-username').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            if (!username || !password) return alert("아이디와 비밀번호를 모두 입력해 주세요!");
             socket.emit('login', { username, password });
-        }
+        });
 
-        function handleRegister() {
-            const username = document.getElementById('auth-username').value;
-            const password = document.getElementById('auth-password').value;
-            const nickname = document.getElementById('auth-nickname').value;
-            if (!username || !password || !nickname) return alert("아이디, 비밀번호, 닉네임을 입력해 주세요.");
+        document.getElementById('register-btn').addEventListener('click', function() {
+            const username = document.getElementById('auth-username').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            const nickname = document.getElementById('auth-nickname').value.trim();
+            if (!username || !password || !nickname) return alert("아이디, 비밀번호, 닉네임을 모두 입력해 주세요!");
             socket.emit('register', { username, password, nickname });
-        }
+        });
+
+        // 엔터키 지원
+        ['auth-username', 'auth-password', 'auth-nickname'].forEach(id => {
+            document.getElementById(id).addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') document.getElementById('login-btn').click();
+            });
+        });
 
         socket.on('authError', msg => alert(msg));
         socket.on('authSuccess', data => alert(data.message));
@@ -846,7 +855,7 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` Poki Party v1.8.1 Fix Deploy Server Running!`);
+    console.log(` Poki Party v1.8.2 Click Fix Server Running!`);
     console.log(` Server running on Port: ${PORT}`);
     console.log(`=================================================`);
 });
