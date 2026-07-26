@@ -350,8 +350,12 @@ function getHTMLContent() {
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>ポキパティ！！ (Poki Party v1.6.0)</title>
+    <title>ポキパティ！！ (Poki Party v1.7.0)</title>
+
+    <!-- [v1.7.0 웹폰트 이중 매핑] 귀여운 둥근모 & 나눔스퀘어라운드 웹폰트 로드 -->
     <link href="https://cdn.jsdelivr.net/gh/neodgm/neodgm-webfont@latest/neodgm.css" rel="stylesheet">
+    <link href="https://hangeul.naver.com/app/full-store/2017/NanumSquareRound.css" rel="stylesheet">
+
     <style>
         :root {
             --bg-color: #fde8f0;
@@ -362,18 +366,26 @@ function getHTMLContent() {
             --text-color: #4a2840;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Neodgm', 'DungGeunMo', monospace, sans-serif; image-rendering: pixelated; }
+        /* 굴림체 완벽 제거: 귀여운 나눔스퀘어라운드 & 둥근모 픽셀폰트 우선적용 */
+        * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+            font-family: 'NanumSquareRound', 'Neodgm', 'DungGeunMo', cursive, sans-serif !important; 
+            image-rendering: pixelated; 
+        }
+
         body, html { width: 100vw; height: 100vh; background-color: var(--bg-color); color: var(--text-color); overflow: hidden; display: flex; justify-content: center; align-items: center; }
 
-        .screen { display: none; width: 1280px; height: 800px; padding: 16px; background: #fff0f5; border: 4px solid var(--pixel-border); border-radius: 12px; box-shadow: 6px 6px 0px rgba(74, 40, 64, 0.2); position: relative; }
+        .screen { display: none; width: 1280px; height: 800px; padding: 16px; background: #fff0f5; border: 4px solid var(--pixel-border); border-radius: 16px; box-shadow: 6px 6px 0px rgba(74, 40, 64, 0.2); position: relative; }
         .screen.active { display: flex; flex-direction: column; }
 
         #auth-screen.active { justify-content: center; align-items: center; gap: 12px; }
 
-        .pixel-box { background: var(--box-bg); border: 3px solid var(--pixel-border); box-shadow: 3px 3px 0px rgba(74, 40, 64, 0.15); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-        .box-header { background: var(--main-pink); color: #fff; padding: 6px 12px; font-weight: bold; font-size: 15px; border-bottom: 3px solid var(--pixel-border); text-shadow: 1px 1px 0px var(--pixel-border); }
+        .pixel-box { background: var(--box-bg); border: 3px solid var(--pixel-border); box-shadow: 3px 3px 0px rgba(74, 40, 64, 0.15); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
+        .box-header { background: var(--main-pink); color: #fff; padding: 6px 12px; font-weight: 800; font-size: 15px; border-bottom: 3px solid var(--pixel-border); text-shadow: 1px 1px 0px var(--pixel-border); }
 
-        .pixel-btn { background: #ffb6c1; border: 2.5px solid var(--pixel-border); color: var(--text-color); padding: 6px 10px; font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0px var(--pixel-border); border-radius: 4px; font-size: 13px; }
+        .pixel-btn { background: #ffb6c1; border: 2.5px solid var(--pixel-border); color: var(--text-color); padding: 6px 12px; font-weight: 800; cursor: pointer; box-shadow: 2px 2px 0px var(--pixel-border); border-radius: 8px; font-size: 13px; transition: transform 0.05s; }
         .pixel-btn:active { transform: translate(2px, 2px); box-shadow: 0px 0px 0px var(--pixel-border); }
         .pixel-btn.primary { background: #ff75a0; color: white; }
         .pixel-btn.warning { background: #ffb703; color: white; }
@@ -382,39 +394,38 @@ function getHTMLContent() {
         .pixel-btn.selected { background: #4a2840; color: white; border-color: #ff0055; }
 
         .lobby-header { text-align: center; margin-bottom: 12px; }
-        .pixel-title { font-size: 40px; color: var(--dark-pink); text-shadow: 2px 2px 0px #fff, 4px 4px 0px var(--pixel-border); }
+        .pixel-title { font-size: 42px; font-weight: 800; color: var(--dark-pink); text-shadow: 2px 2px 0px #fff, 4px 4px 0px var(--pixel-border); }
         .lobby-container { display: grid; grid-template-columns: 240px 1fr 300px; gap: 12px; flex: 1; height: calc(100% - 70px); }
         .room-grid { padding: 12px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; overflow-y: auto; flex: 1; }
-        .room-card { background: #fff; border: 2px solid var(--pixel-border); border-radius: 6px; padding: 10px; cursor: pointer; box-shadow: 2px 2px 0px rgba(0,0,0,0.1); }
+        .room-card { background: #fff; border: 2.5px solid var(--pixel-border); border-radius: 8px; padding: 10px; cursor: pointer; box-shadow: 2px 2px 0px rgba(0,0,0,0.1); }
         .room-card:hover { background: #fff5f8; border-color: #ff0055; }
 
-        /* 인게임 헤더 가독성 강화 */
-        .game-header { display: grid; grid-template-columns: 220px 1fr 220px; align-items: center; background: var(--main-pink); border: 3px solid var(--pixel-border); padding: 8px 16px; color: white; margin-bottom: 12px; border-radius: 8px; text-shadow: 1.5px 1.5px 0px var(--pixel-border); }
-        .game-logo { font-size: 22px; font-weight: bold; }
-        .header-center { text-align: center; font-size: 22px; font-weight: bold; color: #ffffff; background: rgba(74, 40, 64, 0.25); padding: 4px 12px; border-radius: 6px; border: 2px solid var(--pixel-border); }
-        .header-right { display: flex; flex-direction: column; align-items: flex-end; font-size: 15px; gap: 2px; }
+        /* 인게임 헤더 디자인 및 가독성 업그레이드 */
+        .game-header { display: grid; grid-template-columns: 200px 1fr 220px; align-items: center; background: var(--main-pink); border: 3px solid var(--pixel-border); padding: 8px 16px; color: white; margin-bottom: 12px; border-radius: 12px; text-shadow: 1px 1px 0px var(--pixel-border); }
+        .game-logo { font-size: 22px; font-weight: 800; }
+        .header-center { text-align: center; font-size: 24px; font-weight: 800; color: #ffffff; background: rgba(74, 40, 64, 0.25); padding: 6px 16px; border-radius: 10px; border: 2px solid var(--pixel-border); letter-spacing: 1px; }
+        .header-right { display: flex; flex-direction: column; align-items: flex-end; font-size: 15px; font-weight: 800; gap: 2px; }
 
         .game-container { display: grid; grid-template-columns: 200px 1fr 340px; gap: 12px; flex: 1; height: calc(100% - 60px); }
         .game-main { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 
-        #paint-canvas { background: #ffffff; cursor: crosshair; width: 800px; height: 480px; display: block; border: 3px solid var(--pixel-border); border-radius: 6px; }
+        #paint-canvas { background: #ffffff; cursor: crosshair; width: 800px; height: 480px; display: block; border: 3px solid var(--pixel-border); border-radius: 10px; }
 
         .palette-container { width: 800px; padding: 8px; gap: 6px; }
-        /* 13x2 팔레트 그리드 */
         .palette-grid { display: grid; grid-template-columns: repeat(13, 1fr); gap: 4px; margin-bottom: 6px; }
-        .color-swatch { width: 100%; height: 22px; border: 2px solid var(--pixel-border); cursor: pointer; border-radius: 3px; }
-        .color-swatch.selected { outline: 2px solid #ff0055; transform: scale(1.15); z-index: 2; }
+        .color-swatch { width: 100%; height: 22px; border: 2px solid var(--pixel-border); cursor: pointer; border-radius: 4px; }
+        .color-swatch.selected { outline: 2.5px solid #ff0055; transform: scale(1.15); z-index: 2; }
 
         .chat-box { height: 100%; }
-        .chat-messages { flex: 1; padding: 10px; overflow-y: auto; background: #fff5f8; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
-        .chat-messages .msg { background: #fff; padding: 4px 8px; border-radius: 4px; border: 1px solid #ffb3c6; word-break: break-all; }
-        .chat-messages .system { background: #e1f5fe; color: #0277bd; font-weight: bold; border-color: #81d4fa; }
+        .chat-messages { flex: 1; padding: 10px; overflow-y: auto; background: #fff5f8; font-size: 13px; font-weight: 700; display: flex; flex-direction: column; gap: 4px; }
+        .chat-messages .msg { background: #fff; padding: 5px 9px; border-radius: 6px; border: 1.5px solid #ffb3c6; word-break: break-all; }
+        .chat-messages .system { background: #e1f5fe; color: #0277bd; font-weight: 800; border-color: #81d4fa; }
         .chat-input-group { display: flex; padding: 6px; background: #fff; border-top: 2px solid var(--pixel-border); gap: 4px; }
-        .chat-input-group input { flex: 1; border: 2px solid var(--pixel-border); padding: 4px 8px; outline: none; font-size: 13px; border-radius: 4px; }
+        .chat-input-group input { flex: 1; border: 2px solid var(--pixel-border); padding: 4px 8px; outline: none; font-size: 13px; font-weight: 700; border-radius: 6px; }
 
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); justify-content: center; align-items: center; z-index: 100; }
-        .modal-content { background: #fff; padding: 20px; border-radius: 12px; border: 4px solid var(--pixel-border); width: 380px; display: flex; flex-direction: column; gap: 10px; }
-        .modal-content input, .modal-content select { padding: 6px; border: 2px solid var(--pixel-border); border-radius: 4px; outline: none; }
+        .modal-content { background: #fff; padding: 20px; border-radius: 14px; border: 4px solid var(--pixel-border); width: 380px; display: flex; flex-direction: column; gap: 10px; font-weight: 700; }
+        .modal-content input, .modal-content select { padding: 6px; border: 2px solid var(--pixel-border); border-radius: 6px; outline: none; font-weight: 700; }
     </style>
 </head>
 <body>
@@ -422,10 +433,10 @@ function getHTMLContent() {
     <!-- [1] Auth Screen -->
     <div id="auth-screen" class="screen active">
         <h1 class="pixel-title">ポキパティ！！</h1>
-        <p style="color: #777; font-size: 14px; margin-bottom: 10px;">~ Needy Girl Style Pixel Drawing Party ~</p>
-        <input type="text" id="auth-username" style="width:260px; padding:8px; border:2px solid var(--pixel-border);" placeholder="아이디">
-        <input type="password" id="auth-password" style="width:260px; padding:8px; border:2px solid var(--pixel-border);" placeholder="비밀번호">
-        <input type="text" id="auth-nickname" style="width:260px; padding:8px; border:2px solid var(--pixel-border);" placeholder="닉네임 (회원가입시)">
+        <p style="color: #777; font-size: 15px; font-weight: 700; margin-bottom: 10px;">~ Needy Girl Style Pixel Drawing Party ~</p>
+        <input type="text" id="auth-username" style="width:260px; padding:8px; border:2px solid var(--pixel-border); border-radius:6px;" placeholder="아이디">
+        <input type="password" id="auth-password" style="width:260px; padding:8px; border:2px solid var(--pixel-border); border-radius:6px;" placeholder="비밀번호">
+        <input type="text" id="auth-nickname" style="width:260px; padding:8px; border:2px solid var(--pixel-border); border-radius:6px;" placeholder="닉네임 (회원가입시)">
         <div style="display: flex; gap: 10px; margin-top: 5px;">
             <button class="pixel-btn primary" onclick="handleLogin()">로그인</button>
             <button class="pixel-btn warning" onclick="handleRegister()">회원가입</button>
@@ -441,13 +452,13 @@ function getHTMLContent() {
             <aside style="display:flex; flex-direction:column; gap:10px;">
                 <div class="pixel-box">
                     <div class="box-header">👤 내 프로필</div>
-                    <div id="user-profile-info" style="padding:10px; font-size:13px; line-height:1.6;"></div>
+                    <div id="user-profile-info" style="padding:10px; font-size:13px; font-weight:700; line-height:1.6;"></div>
                     <button class="pixel-btn primary" style="margin:4px 10px;" onclick="openCreateModal()">+ 방 만들기</button>
                     <button class="pixel-btn warning" style="margin:4px 10px 10px 10px;" onclick="openShopModal()">🛒 상점 방문</button>
                 </div>
                 <div class="pixel-box" style="flex:1;">
                     <div class="box-header">🌐 접속자 목록 (<span id="online-count">0</span>)</div>
-                    <ul id="lobby-user-list" style="list-style:none; padding:8px; overflow-y:auto; font-size:12px;"></ul>
+                    <ul id="lobby-user-list" style="list-style:none; padding:8px; overflow-y:auto; font-size:13px; font-weight:700;"></ul>
                 </div>
             </aside>
 
@@ -494,7 +505,6 @@ function getHTMLContent() {
                 <div class="palette-container pixel-box">
                     <div class="palette-grid" id="palette-grid"></div>
                     <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
-                        <!-- 펜 크기 5종류 제공 -->
                         <button class="pixel-btn size-btn" onclick="setLineWidth(1, this)">✏️ 1px</button>
                         <button class="pixel-btn size-btn selected" onclick="setLineWidth(3, this)">✏️ 3px</button>
                         <button class="pixel-btn size-btn" onclick="setLineWidth(6, this)">✏️ 6px</button>
@@ -540,7 +550,7 @@ function getHTMLContent() {
 
     <div id="shop-modal" class="modal">
         <div class="modal-content" style="width: 420px; max-height: 550px;">
-            <h3 style="color: var(--dark-pink);">🛒 v1.6.0 포인트 상점</h3>
+            <h3 style="color: var(--dark-pink);">🛒 v1.7.0 포인트 상점</h3>
             <div style="display:flex; gap:10px; margin-bottom:6px;">
                 <button class="pixel-btn primary" onclick="renderShopCategory('badges')">뱃지 목록</button>
                 <button class="pixel-btn warning" onclick="renderShopCategory('colors')">닉네임 색상</button>
@@ -564,7 +574,6 @@ function getHTMLContent() {
         const canvas = document.getElementById('paint-canvas');
         const ctx = canvas.getContext('2d');
 
-        // 정확히 26개 색상 (13개 x 2줄 대칭 배열)
         const PALETTE_COLORS = [
             "#000000", "#555555", "#888888", "#ffffff", "#ff0055", "#ff5555", "#ff9900", "#ffcc00", "#22cc55", "#00bbf9", "#0055ff", "#9b5de5", "#f15bb5",
             "#2b1424", "#3d2b1f", "#a0a0a0", "#d3d3d3", "#ffc0cb", "#ff85a2", "#ffb703", "#ffe66d", "#90be6d", "#43aa8b", "#4cc9f0", "#4895ef", "#7209b7"
@@ -730,7 +739,7 @@ function getHTMLContent() {
             list.innerHTML = '';
             players.forEach(p => {
                 const card = document.createElement('div');
-                card.style.cssText = 'background:#fff; border:2px solid var(--pixel-border); padding:6px; border-radius:4px; display:flex; justify-content:space-between; font-size:12px;';
+                card.style.cssText = 'background:#fff; border:2px solid var(--pixel-border); padding:6px; border-radius:6px; display:flex; justify-content:space-between; font-size:13px; font-weight:700;';
                 if (p.id === drawerId) card.style.background = '#fff9c4';
 
                 const isHost = p.id === hostId ? ' 👑' : '';
@@ -742,7 +751,6 @@ function getHTMLContent() {
                 list.appendChild(card);
             });
 
-            // 게임 진행 중에는 게임 시작 버튼 완전 숨김 처리
             const startBtn = document.getElementById('start-game-btn');
             if (socket.id === hostId && !isPlaying) {
                 startBtn.style.display = 'block';
@@ -805,7 +813,6 @@ function getHTMLContent() {
             socket.emit('clearCanvas');
         }
 
-        // 펜 두께 설정 함수
         function setLineWidth(w, btn) {
             currentLineWidth = w;
             document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('selected'));
@@ -837,7 +844,7 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` Poki Party v1.6.0 Fixed Engine Active!`);
+    console.log(` Poki Party v1.7.0 Cute Font Engine Active!`);
     console.log(` Server running on Port: ${PORT}`);
     console.log(`=================================================`);
 });
