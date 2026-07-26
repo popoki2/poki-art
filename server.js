@@ -12,16 +12,14 @@ const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, 'usersDB.json');
 const WORDS_PATH = path.join(__dirname, 'wordsDB.json');
 
-// 유저 DB 로드 / 저장
+// --- [ 데이터베이스 연동 ] ---
 function loadUsersDB() {
     try {
         if (!fs.existsSync(DB_PATH)) {
             fs.writeFileSync(DB_PATH, JSON.stringify({}), 'utf8');
         }
-        const data = fs.readFileSync(DB_PATH, 'utf8');
-        return JSON.parse(data || '{}');
+        return JSON.parse(fs.readFileSync(DB_PATH, 'utf8') || '{}');
     } catch (e) {
-        console.error("DB Load Error:", e);
         return {};
     }
 }
@@ -29,19 +27,15 @@ function loadUsersDB() {
 function saveUsersDB(db) {
     try {
         fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf8');
-    } catch (e) {
-        console.error("DB Save Error:", e);
-    }
+    } catch (e) {}
 }
 
-// 외부 wordsDB.json 파일 로드
 function loadWordsDB() {
     try {
         if (!fs.existsSync(WORDS_PATH)) {
-            return { food: ["떡볶이", "초밥"], anime: ["피카츄", "나루토"], meme: ["무야호"], lol: ["티모"], all: ["떡볶이", "초밥", "피카츄", "나루토", "무야호", "티모"] };
+            return { food: ["마카롱", "케이크"], anime: ["피카츄", "초사이어인"], meme: ["무야호"], lol: ["티모"], all: ["마카롱", "케이크", "피카츄", "초사이어인", "무야호", "티모"] };
         }
-        const raw = fs.readFileSync(WORDS_PATH, 'utf8');
-        const parsed = JSON.parse(raw);
+        const parsed = JSON.parse(fs.readFileSync(WORDS_PATH, 'utf8'));
         parsed.all = Array.from(new Set([
             ...(parsed.food || []),
             ...(parsed.anime || []),
@@ -50,12 +44,21 @@ function loadWordsDB() {
         ]));
         return parsed;
     } catch (e) {
-        return { food: [], anime: [], meme: [], lol: [], all: [] };
+        return { food: [], anime: [], meme: [], lol: [] };
     }
 }
 
 let usersDB = loadUsersDB();
 let wordsDB = loadWordsDB();
+
+const SHOP_ITEMS = [
+    { id: 'title_artist', type: 'title', name: '🎨 피카소의 재래', price: 300, value: '피카소의 재래' },
+    { id: 'title_master', type: 'title', name: '👑 그림의 신', price: 800, value: '그림의 신' },
+    { id: 'color_pink', type: 'color', name: '💗 네온 핑크 닉네임', price: 400, value: '#ff69b4' },
+    { id: 'color_gold', type: 'color', name: '✨ 황금빛 닉네임', price: 600, value: '#ffd700' },
+    { id: 'badge_angel', type: 'badge', name: '👼 천사 아이콘', price: 350, value: '👼' },
+    { id: 'badge_devil', type: 'badge', name: '😈 악마 아이콘', price: 350, value: '😈' }
+];
 
 function getRandomWord(category, usedWords = []) {
     wordsDB = loadWordsDB();
@@ -67,8 +70,7 @@ function getRandomWord(category, usedWords = []) {
         available = list;
         usedWords.length = 0;
     }
-    const randomIndex = Math.floor(Math.random() * available.length);
-    const selected = available[randomIndex];
+    const selected = available[Math.floor(Math.random() * available.length)];
     usedWords.push(selected);
     return selected;
 }
@@ -94,65 +96,67 @@ function getPublicRoomList() {
 io.on('connection', (socket) => {
     let currentUser = { username: null, nickname: null, roomId: null };
 
-    // 회원가입
     socket.on('register', ({ username, password, nickname }) => {
         usersDB = loadUsersDB();
-        if (usersDB[username]) {
-            return socket.emit('authError', '이미 존재하는 아이디입니다.');
-        }
-        
-        // 닉네임 중복 검사
-        const isNicknameTaken = Object.values(usersDB).some(u => u.nickname === nickname);
-        if (isNicknameTaken) {
-            return socket.emit('authError', '이미 사용 중인 닉네임입니다.');
-        }
+        if (usersDB[username]) return socket.emit('authError', '이미 존재하는 아이디입니다.');
+        if (Object.values(usersDB).some(u => u.nickname === nickname)) return socket.emit('authError', '이미 사용 중인 닉네임입니다.');
 
         usersDB[username] = {
-            username,
-            password,
-            nickname: nickname || username,
-            points: 500,
-            exp: 0,
-            level: 1,
-            inventory: [],
-            equipped: { title: '신입', badge: '🔰' }
+            username, password, nickname: nickname || username,
+            points: 1000, exp: 0, inventory: [],
+            equipped: { title: '인터넷 오타쿠', badge: '🎀', color: '#ff1493', border: 'none' }
         };
         saveUsersDB(usersDB);
-        socket.emit('authSuccess', { message: '회원가입 완료! 로그인 해주세요.' });
+        socket.emit('authSuccess', { message: '가입 완료! 로그인해 주세요.' });
     });
 
-    // 로그인
     socket.on('login', ({ username, password }) => {
         usersDB = loadUsersDB();
         const user = usersDB[username];
-
-        if (!user || user.password !== password) {
-            return socket.emit('authError', '아이디 또는 비밀번호가 일치하지 않습니다.');
-        }
-
-        const isAlreadyLoggedIn = Object.values(lobbyUsers).some(u => u.username === username);
-        if (isAlreadyLoggedIn) {
-            return socket.emit('authError', '이미 다른 곳에서 접속 중인 계정입니다.');
-        }
+        if (!user || user.password !== password) return socket.emit('authError', '아이디 또는 비밀번호가 틀립니다.');
+        if (Object.values(lobbyUsers).some(u => u.username === username)) return socket.emit('authError', '이미 로그인되어 있습니다.');
 
         currentUser.username = username;
         currentUser.nickname = user.nickname;
-        lobbyUsers[socket.id] = { id: socket.id, username, ...user };
+        lobbyUsers[socket.id] = { id: socket.id, username, nickname: user.nickname, equipped: user.equipped, points: user.points };
 
         socket.emit('loginSuccess', { username, ...user });
         io.emit('updateLobbyUsers', Object.values(lobbyUsers));
         socket.emit('updateRoomList', getPublicRoomList());
     });
 
-    // 방 생성 (상세 옵션 수신)
+    socket.on('buyItem', (itemId) => {
+        if (!currentUser.username) return;
+        usersDB = loadUsersDB();
+        const user = usersDB[currentUser.username];
+        const item = SHOP_ITEMS.find(i => i.id === itemId);
+
+        if (!user || !item) return;
+        if (user.points < item.price) return socket.emit('shopError', '포인트가 부족합니다!');
+        if (user.inventory.includes(itemId)) return socket.emit('shopError', '이미 보유한 아이템입니다.');
+
+        user.points -= item.price;
+        user.inventory.push(itemId);
+        user.equipped[item.type] = item.value;
+
+        saveUsersDB(usersDB);
+        socket.emit('shopSuccess', { user, message: `[${item.name}] 구매 완료!` });
+        if (lobbyUsers[socket.id]) lobbyUsers[socket.id].equipped = user.equipped;
+        io.emit('updateLobbyUsers', Object.values(lobbyUsers));
+    });
+
+    socket.on('sendLobbyChat', (msg) => {
+        if (!currentUser.nickname) return;
+        io.emit('lobbyChat', { sender: currentUser.nickname, text: msg, equipped: usersDB[currentUser.username]?.equipped });
+    });
+
     socket.on('createRoom', (config) => {
         if (!currentUser.username) return;
-
         const roomId = 'room_' + Date.now();
         rooms[roomId] = {
             id: roomId,
             roomNum: roomCounter++,
-            title: config.title || '즐거운 포키파티!',
+            title: config.title || '포키파티 즐겁게 하자!',
             password: config.password || '',
             maxPlayers: parseInt(config.maxPlayers) || 6,
             totalRounds: parseInt(config.totalRounds) || 3,
@@ -170,21 +174,17 @@ io.on('connection', (socket) => {
             solvedPlayers: [],
             canvasData: []
         };
-
         joinRoomAction(socket, roomId, config.password, currentUser);
     });
 
-    socket.on('joinRoom', ({ roomId, password }) => {
-        if (!currentUser.username) return;
-        joinRoomAction(socket, roomId, password, currentUser);
-    });
+    socket.on('joinRoom', ({ roomId, password }) => joinRoomAction(socket, roomId, password, currentUser));
 
     function joinRoomAction(socket, roomId, password, currentUser) {
         const room = rooms[roomId];
         if (!room) return socket.emit('joinError', '존재하지 않는 방입니다.');
-        if (room.password && room.password !== password) return socket.emit('joinError', '비밀번호가 올바르지 않습니다.');
-        if (room.players.length >= room.maxPlayers) return socket.emit('joinError', '정원이 가득 찬 방입니다.');
-        if (room.isPlaying) return socket.emit('joinError', '게임이 이미 진행 중입니다.');
+        if (room.password && room.password !== password) return socket.emit('joinError', '비밀번호가 틀립니다.');
+        if (room.players.length >= room.maxPlayers) return socket.emit('joinError', '방 정원이 꽉 찼습니다.');
+        if (room.isPlaying) return socket.emit('joinError', '이미 게임이 진행 중입니다.');
 
         delete lobbyUsers[socket.id];
         io.emit('updateLobbyUsers', Object.values(lobbyUsers));
@@ -199,8 +199,7 @@ io.on('connection', (socket) => {
             username: currentUser.username,
             name: currentUser.nickname,
             score: 0,
-            badge: user.equipped?.badge || '🔰',
-            title: user.equipped?.title || '신입'
+            equipped: user.equipped || {}
         };
         room.players.push(player);
 
@@ -211,42 +210,51 @@ io.on('connection', (socket) => {
     }
 
     socket.on('requestStartGame', () => {
-        const roomId = currentUser.roomId;
-        if (!roomId || !rooms[roomId]) return;
-        const room = rooms[roomId];
-
-        if (room.hostId !== socket.id) return socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 방장만 게임을 시작할 수 있습니다.' });
-        if (room.players.length < 2) return socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 최소 2명 이상이어야 시작 가능합니다.' });
-        if (room.isPlaying) return;
-
-        startGame(roomId);
+        const room = rooms[currentUser.roomId];
+        if (!room || room.hostId !== socket.id || room.players.length < 2 || room.isPlaying) return;
+        startGame(currentUser.roomId);
     });
 
     socket.on('draw', (drawData) => {
-        const roomId = currentUser.roomId;
-        if (!roomId || !rooms[roomId]) return;
-        const room = rooms[roomId];
-        if (room.players[room.drawerIndex]?.id === socket.id) {
+        const room = rooms[currentUser.roomId];
+        if (room && room.players[room.drawerIndex]?.id === socket.id) {
             room.canvasData.push(drawData);
-            socket.to(roomId).emit('draw', drawData);
+            socket.to(currentUser.roomId).emit('draw', drawData);
         }
     });
 
     socket.on('clearCanvas', () => {
-        const roomId = currentUser.roomId;
-        if (!roomId || !rooms[roomId]) return;
-        const room = rooms[roomId];
-        if (room.players[room.drawerIndex]?.id === socket.id) {
+        const room = rooms[currentUser.roomId];
+        if (room && room.players[room.drawerIndex]?.id === socket.id) {
             room.canvasData = [];
-            io.to(roomId).emit('clearCanvas');
+            io.to(currentUser.roomId).emit('clearCanvas');
         }
     });
 
+    // --- [ 👍 개추(따봉) 기능 ] ---
+    socket.on('sendGaechu', () => {
+        const room = rooms[currentUser.roomId];
+        if (!room || !room.isPlaying) return;
+
+        const drawer = room.players[room.drawerIndex];
+        if (!drawer || drawer.id === socket.id) return; // 그리는 당사자는 자기 그림에 개추 불가
+
+        // 그림 그린 플레이어에게 +10pt 보상
+        drawer.score += 10;
+        usersDB = loadUsersDB();
+        if (usersDB[drawer.username]) {
+            usersDB[drawer.username].points += 10;
+            saveUsersDB(usersDB);
+        }
+
+        io.to(room.id).emit('geachuEffect', { sender: currentUser.nickname, drawerName: drawer.name });
+        io.to(room.id).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: drawer.id });
+    });
+
+    // --- [ 정답 및 등수 + 시간 연동 차등 점수 계산 ] ---
     socket.on('chatMessage', (msg) => {
         const roomId = currentUser.roomId;
-        if (!roomId || !rooms[roomId]) {
-            return io.emit('lobbyChat', { sender: currentUser.nickname, text: msg });
-        }
+        if (!roomId || !rooms[roomId]) return;
 
         const room = rooms[roomId];
         const isDrawer = room.players[room.drawerIndex]?.id === socket.id;
@@ -254,15 +262,31 @@ io.on('connection', (socket) => {
 
         if (room.isPlaying && !isDrawer && !isAlreadySolved && msg.trim() === room.currentWord) {
             room.solvedPlayers.push(socket.id);
-            const solveOrder = room.solvedPlayers.length;
-            const earnedScore = Math.max(150 - (solveOrder - 1) * 20, 50);
+            const rank = room.solvedPlayers.length; // 1등, 2등, 3등...
+
+            // [점수 계산 공식]
+            // 기본 점수: 1등=100, 2등=70, 3등=50, 4등이하=30
+            // 시간 가산점: (남은시간 / 총시간) * (1등=100, 2등=70, 3등=50, 4등이하=30)
+            let baseScore = 30;
+            if (rank === 1) baseScore = 100;
+            else if (rank === 2) baseScore = 70;
+            else if (rank === 3) baseScore = 50;
+
+            const timeBonusRatio = room.timeLeft / room.roundTime;
+            const earnedScore = Math.round(baseScore + (baseScore * timeBonusRatio));
 
             const player = room.players.find(p => p.id === socket.id);
             if (player) player.score += earnedScore;
 
+            usersDB = loadUsersDB();
+            if (usersDB[currentUser.username]) {
+                usersDB[currentUser.username].points += earnedScore;
+                saveUsersDB(usersDB);
+            }
+
             io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: room.players[room.drawerIndex]?.id });
             io.to(roomId).emit('correctAnswerOverlay', { winner: currentUser.nickname });
-            io.to(roomId).emit('chatMessage', { sender: 'SYSTEM 🎉', text: `[${solveOrder}등] ${currentUser.nickname} 님 정답! (+${earnedScore}pt)` });
+            io.to(roomId).emit('chatMessage', { sender: 'SYSTEM 🎉', text: `[${rank}등] ${currentUser.nickname} 정답! (남은시간 ${room.timeLeft}초 ⚡ +${earnedScore}pt)` });
 
             if (room.solvedPlayers.length >= room.players.length - 1) {
                 clearInterval(room.timer);
@@ -274,7 +298,7 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('chatMessage', { sender: currentUser.nickname, text: msg });
     });
 
-    socket.on('leaveRoom', () => { leaveCurrentRoom(socket); });
+    socket.on('leaveRoom', () => leaveCurrentRoom(socket));
     socket.on('disconnect', () => {
         leaveCurrentRoom(socket);
         delete lobbyUsers[socket.id];
@@ -292,9 +316,7 @@ io.on('connection', (socket) => {
             room.players.splice(idx, 1);
             socket.leave(roomId);
 
-            if (room.hostId === socket.id && room.players.length > 0) {
-                room.hostId = room.players[0].id;
-            }
+            if (room.hostId === socket.id && room.players.length > 0) room.hostId = room.players[0].id;
 
             if (room.players.length === 0) {
                 clearInterval(room.timer);
@@ -306,7 +328,7 @@ io.on('connection', (socket) => {
 
         currentUser.roomId = null;
         if (currentUser.username && usersDB[currentUser.username]) {
-            lobbyUsers[socket.id] = { id: socket.id, username: currentUser.username, ...usersDB[currentUser.username] };
+            lobbyUsers[socket.id] = { id: socket.id, username: currentUser.username, nickname: currentUser.nickname, equipped: usersDB[currentUser.username].equipped };
         }
         
         socket.emit('leftRoom');
@@ -347,7 +369,7 @@ function nextTurn(roomId) {
         room.isPlaying = false;
         const sorted = [...room.players].sort((a, b) => b.score - a.score);
         io.to(roomId).emit('gameOver', sorted);
-        io.to(roomId).emit('chatMessage', { sender: 'SYSTEM 🏆', text: `게임 종료! 1등: ${sorted[0]?.name || '없음'}님!` });
+        io.to(roomId).emit('chatMessage', { sender: 'SYSTEM 🏆', text: `게임 완료! 1등: ${sorted[0]?.name || '없음'} 님!` });
         io.emit('updateRoomList', getPublicRoomList());
         return;
     }
@@ -378,9 +400,7 @@ function nextTurn(roomId) {
     }, 1000);
 }
 
-app.get('/', (req, res) => {
-    res.send(getHTMLContent());
-});
+app.get('/', (req, res) => res.send(getHTMLContent()));
 
 function getHTMLContent() {
     return `
@@ -388,185 +408,183 @@ function getHTMLContent() {
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Poki Party! - 포키파티</title>
+    <title>ポキパティ！！ (Poki Party v1.3.0)</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'MapleStory', sans-serif, sans-serif; }
-        body { background: #fce4ec; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        @import url('https://fonts.googleapis.com/css2?family=DungGeunMo&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'DungGeunMo', monospace; }
+        body { background: #ffdeec; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
 
-        .screen { display: none; width: 980px; height: 680px; background: #fff; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); border: 4px solid #f48fb1; padding: 16px; position: relative; }
-        
-        #auth-screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
-        #loading-screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: #fff0f5; }
-        #lobby-screen.active { display: flex; gap: 16px; }
-        
-        /* 인게임 레이아웃: CSS Grid 정밀 계산으로 채팅창 뚫림 방지 */
-        #game-room.active { 
-            display: grid; 
-            grid-template-columns: 200px 1fr 240px; 
-            gap: 12px; 
-            height: 100%; 
-            width: 100%;
-        }
+        .screen { display: none; width: 1100px; height: 740px; background: #fff0f5; border: 4px solid #ff1493; box-shadow: 6px 6px 0px #000; padding: 16px; position: relative; }
+        #auth-screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+        #lobby-screen.active { display: grid; grid-template-columns: 280px 1fr; gap: 16px; height: 100%; }
+        #game-room.active { display: grid; grid-template-columns: 220px 1fr 280px; gap: 12px; height: 100%; }
 
-        .input-box { width: 280px; padding: 10px; border: 2px solid #f48fb1; border-radius: 8px; outline: none; font-size: 14px; }
-        .btn { padding: 8px 16px; background: #f06292; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px; }
-        .btn:hover { background: #ec407a; }
+        .pixel-title { font-size: 36px; color: #ff1493; text-shadow: 2px 2px 0px #000; }
+        .input-box { width: 280px; padding: 10px; border: 3px solid #ff1493; background: #fff; font-size: 14px; outline: none; box-shadow: 2px 2px 0px #000; }
+        .btn { padding: 8px 16px; background: #ff69b4; color: #fff; border: 2px solid #000; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 3px 3px 0px #000; }
+        .btn:hover { background: #ff1493; }
 
-        .spinner { width: 50px; height: 50px; border: 5px solid #f8bbd0; border-top: 5px solid #ec407a; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .lobby-left { display: flex; flex-direction: column; gap: 12px; height: 100%; }
+        .lobby-card { background: #fff; border: 3px solid #ff1493; padding: 12px; box-shadow: 3px 3px 0px #000; }
+        .user-list-box { flex: 1; background: #fff; border: 3px solid #ff1493; padding: 8px; overflow-y: auto; box-shadow: 3px 3px 0px #000; display: flex; flex-direction: column; gap: 6px; }
 
-        .lobby-side { width: 240px; background: #fff5f8; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 12px; border: 2px solid #f8bbd0; }
-        .lobby-main { flex: 1; display: flex; flex-direction: column; gap: 12px; }
-        .room-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; overflow-y: auto; max-height: 520px; }
-        .room-card { background: #fff; border: 2px solid #f8bbd0; border-radius: 8px; padding: 12px; cursor: pointer; }
-        .room-card:hover { border-color: #f06292; }
+        .lobby-main { display: flex; flex-direction: column; gap: 12px; height: 100%; }
+        .room-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; overflow-y: auto; max-height: 420px; }
+        .room-card { background: #fff; border: 3px solid #ff69b4; padding: 12px; cursor: pointer; box-shadow: 3px 3px 0px #000; }
 
-        .player-list { background: #fff5f8; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; border: 2px solid #f8bbd0; height: 100%; }
-        .player-card { background: #fff; border: 2px solid #f8bbd0; padding: 8px; border-radius: 6px; font-size: 12px; display: flex; justify-content: space-between; }
+        .lobby-chat-area { height: 180px; background: #fff; border: 3px solid #ff1493; padding: 8px; display: flex; flex-direction: column; box-shadow: 3px 3px 0px #000; }
+        .lobby-chat-msgs { flex: 1; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+
+        .player-list { background: #fff; border: 3px solid #ff1493; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: 3px 3px 0px #000; height: 100%; }
+        .player-card { background: #fff5f8; border: 2px solid #ff69b4; padding: 6px 8px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
         .player-card.is-drawer { background: #fff9c4; border-color: #fbc02d; font-weight: bold; }
         .player-card.is-solved { background: #c8e6c9; border-color: #4caf50; }
 
-        .canvas-area { display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; height: 100%; }
-        #canvas-wrapper { position: relative; border: 3px solid #f48fb1; border-radius: 8px; background: #fff; overflow: hidden; }
+        .poki-logo-badge { margin-top: auto; text-align: center; background: #ff1493; color: white; padding: 6px; border: 2px solid #000; font-size: 14px; font-weight: bold; box-shadow: 2px 2px 0px #000; }
+
+        .canvas-area { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; }
+        #canvas-wrapper { position: relative; border: 4px solid #ff1493; background: #fff; box-shadow: 4px 4px 0px #000; }
         canvas { display: block; cursor: crosshair; }
 
-        /* 20개 이상의 풍성한 팔레트 스타일 */
-        .palette-grid { display: flex; flex-wrap: wrap; gap: 4px; width: 480px; justify-content: center; background: #fff5f8; padding: 6px; border-radius: 8px; border: 2px solid #f8bbd0; }
-        .color-dot { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 1.5px solid #ccc; transition: 0.1s; }
-        .color-dot.active { border: 2px solid #000; transform: scale(1.25); }
+        /* 개추(👍) 버튼 위치 조정 */
+        #geachu-btn { position: absolute; right: 12px; bottom: 12px; background: #ff4081; color: white; padding: 8px 14px; border: 2.5px solid #000; border-radius: 20px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 3px 3px 0px #000; z-index: 5; }
+        #geachu-btn:active { transform: scale(0.95); }
 
-        .tools-row { display: flex; gap: 6px; align-items: center; justify-content: center; width: 480px; margin-top: 2px; }
-        .tool-btn { padding: 4px 8px; font-size: 11px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; }
-        .tool-btn.active { background: #f06292; color: white; font-weight: bold; }
+        /* 개추 애니메이션 Floating 텍스트 */
+        .geachu-pop { position: absolute; color: #ff1493; font-weight: bold; font-size: 20px; text-shadow: 2px 2px 0px #fff, -1px -1px 0px #000; pointer-events: none; animation: floatUp 1.2s forwards ease-out; }
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-80px) scale(1.4); }
+        }
 
-        /* 채팅창 레이아웃 - 뚫림 고침 */
-        .chat-area { display: flex; flex-direction: column; background: #fff5f8; border-radius: 10px; padding: 10px; border: 2px solid #f8bbd0; height: 100%; overflow: hidden; }
-        .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12px; padding-right: 4px; word-break: break-all; }
-        .chat-msg { background: #fff; padding: 6px 8px; border-radius: 6px; border: 1px solid #ffe0b2; }
-        .chat-msg.system { background: #e1f5fe; border-color: #81d4fa; color: #0277bd; font-weight: bold; }
-        .chat-input-box { display: flex; gap: 4px; margin-top: 8px; height: 32px; }
-        .chat-input-box input { flex: 1; padding: 4px 8px; border: 1px solid #f48fb1; border-radius: 4px; outline: none; font-size: 12px; }
+        .palette-grid { display: grid; grid-template-columns: repeat(13, 1fr); gap: 3px; width: 640px; background: #fff; padding: 6px; border: 3px solid #ff1493; box-shadow: 3px 3px 0px #000; }
+        .color-dot { width: 22px; height: 22px; border: 2px solid #000; cursor: pointer; }
+        .color-dot.active { transform: scale(1.2); border-color: #ff0000; outline: 2px solid #fff; }
 
-        #correct-overlay { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(76, 175, 80, 0.95); color: white; padding: 6px 16px; border-radius: 20px; font-weight: bold; display: none; z-index: 10; font-size: 13px; }
+        .tools-row { display: flex; gap: 6px; align-items: center; justify-content: center; width: 640px; }
+        .tool-btn { padding: 4px 8px; font-size: 12px; border: 2px solid #000; background: #fff; cursor: pointer; box-shadow: 2px 2px 0px #000; }
+        .tool-btn.active { background: #ff1493; color: white; font-weight: bold; }
 
-        /* 방 생성 모달 레이아웃 */
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); justify-content: center; align-items: center; z-index: 100; }
-        .modal-content { background: #fff; padding: 20px; border-radius: 12px; border: 4px solid #f48fb1; width: 340px; display: flex; flex-direction: column; gap: 10px; }
-        .modal-content label { font-size: 12px; font-weight: bold; color: #ad1457; }
-        .modal-content input, .modal-content select { padding: 6px; border: 1px solid #f8bbd0; border-radius: 4px; outline: none; }
+        .chat-area { display: flex; flex-direction: column; background: #fff; border: 3px solid #ff1493; padding: 10px; box-shadow: 3px 3px 0px #000; height: 100%; overflow: hidden; }
+        .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+        .chat-msg { background: #fff0f5; padding: 6px 8px; border: 1.5px solid #ff69b4; }
+        .chat-msg.system { background: #e0f7fa; border-color: #00bcd4; color: #00838f; font-weight: bold; }
+
+        #correct-overlay { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: #4caf50; color: white; padding: 8px 20px; border: 3px solid #000; font-weight: bold; display: none; z-index: 10; font-size: 15px; box-shadow: 3px 3px 0px #000; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: #fff0f5; padding: 20px; border: 4px solid #ff1493; box-shadow: 6px 6px 0px #000; width: 420px; display: flex; flex-direction: column; gap: 12px; }
     </style>
 </head>
 <body>
 
-    <!-- 1. Auth Screen -->
+    <!-- Auth -->
     <div id="auth-screen" class="screen active">
-        <h1 style="color: #d81b60; font-size: 38px;">🎉 Poki Party!</h1>
-        <p style="color: #888; font-size: 13px;">나만의 그림 퀴즈 파티에 오신 걸 환영합니다!</p>
+        <h1 class="pixel-title">ポキパティ！！ (Poki Party)</h1>
+        <p style="color: #666; font-size: 14px;">♡ 레트로 인터넷 그림 퀴즈 파티 ♡</p>
         <input type="text" id="auth-username" class="input-box" placeholder="아이디">
         <input type="password" id="auth-password" class="input-box" placeholder="비밀번호">
-        <input type="text" id="auth-nickname" class="input-box" placeholder="닉네임 (회원가입시 사용)">
+        <input type="text" id="auth-nickname" class="input-box" placeholder="닉네임 (가입 시 필수)">
         <div style="display: flex; gap: 10px; margin-top: 5px;">
             <button class="btn" onclick="handleLogin()">로그인</button>
-            <button class="btn" style="background:#8e24aa;" onclick="handleRegister()">회원가입</button>
+            <button class="btn" style="background:#ba68c8;" onclick="handleRegister()">회원가입</button>
         </div>
     </div>
 
-    <!-- 2. Loading Screen -->
-    <div id="loading-screen" class="screen">
-        <div class="spinner"></div>
-        <h2 style="color: #d81b60; font-size: 26px;">🎉 포키파티에 오신 걸 환영합니다! 🎉</h2>
-        <p style="color: #888; font-size: 14px;">로비 화면을 불러오고 있습니다...</p>
-    </div>
-
-    <!-- 3. Lobby Screen -->
+    <!-- Lobby -->
     <div id="lobby-screen" class="screen">
-        <div class="lobby-side">
-            <h3 style="color: #ad1457;">👤 내 프로필</h3>
-            <div id="user-profile-info" style="font-size: 13px; line-height: 1.6;"></div>
-            <button class="btn" onclick="openCreateModal()">➕ 방 만들기</button>
+        <div class="lobby-left">
+            <div class="lobby-card">
+                <h3 style="color: #ff1493; font-size: 18px; margin-bottom: 6px;">👤 내 프로필</h3>
+                <div id="user-profile-info" style="font-size: 13px; line-height: 1.6;"></div>
+                <div style="display: flex; gap: 6px; margin-top: 8px;">
+                    <button class="btn" style="flex:1; padding: 6px;" onclick="openCreateModal()">➕ 방 만들기</button>
+                    <button class="btn" style="background: #ffd700; color: #000; padding: 6px;" onclick="openShopModal()">🛍️ 상점</button>
+                </div>
+            </div>
+            <div class="user-list-box">
+                <h4 style="color: #ff1493; font-size: 14px;">🌐 접속자 목록</h4>
+                <div id="lobby-user-list" style="display: flex; flex-direction: column; gap: 4px;"></div>
+            </div>
         </div>
+
         <div class="lobby-main">
-            <h3 style="color: #ad1457;">🏠 파티 방 목록</h3>
+            <h2 class="pixel-title" style="font-size: 28px;">ポキパティ！！ 파티 로비</h2>
             <div id="room-grid" class="room-grid"></div>
+            <div class="lobby-chat-area">
+                <h4 style="color: #ff1493; margin-bottom: 4px;">💬 로비 전체 채팅</h4>
+                <div id="lobby-chat-msgs" class="lobby-chat-msgs"></div>
+                <div style="display: flex; gap: 6px; margin-top: 6px;">
+                    <input type="text" id="lobby-chat-input" class="input-box" style="flex:1; width:auto; height: 32px;" placeholder="로비 메시지..." onkeypress="if(event.key==='Enter') sendLobbyChat()">
+                    <button class="btn" style="padding: 4px 12px;" onclick="sendLobbyChat()">전송</button>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- 4. Game Room Screen -->
+    <!-- Game Room -->
     <div id="game-room" class="screen">
         <div class="player-list">
-            <h4 style="text-align: center; color: #ad1457;">PLAYERS</h4>
-            <div id="game-player-list" style="flex:1; overflow-y:auto;"></div>
+            <h4 style="text-align: center; color: #ff1493;">PLAYERS</h4>
+            <div id="game-player-list" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
             <button id="start-game-btn" class="btn" style="background: #4caf50; display:none;" onclick="requestStartGame()">▶️ 게임 시작</button>
+            <div class="poki-logo-badge">ポキパティ！！</div>
         </div>
 
         <div class="canvas-area">
             <div style="display: flex; gap: 20px; align-items: center;">
-                <div id="round-display" style="font-size: 14px; font-weight: bold; color: #8e24aa;">ROUND 1 / 3</div>
-                <div id="timer-display" style="font-size: 16px; font-weight: bold; color: #d81b60;">⏳ 대기 중...</div>
+                <div id="round-display" style="font-size: 15px; font-weight: bold; color: #ba68c8;">ROUND 1 / 3</div>
+                <div id="timer-display" style="font-size: 18px; font-weight: bold; color: #ff1493;">⏳ 대기 중...</div>
             </div>
-            <div id="word-display" style="font-size: 20px; font-weight: bold; color: #2e7d32;">제시어: ???</div>
+            <div id="word-display" style="font-size: 22px; font-weight: bold; color: #2e7d32;">제시어: ???</div>
 
             <div id="canvas-wrapper">
                 <div id="correct-overlay">🎉 <span id="winner-name"></span> 님 정답!</div>
-                <canvas id="game-canvas" width="480" height="380"></canvas>
+                <canvas id="game-canvas" width="640" height="460"></canvas>
+                <!-- 개추 버튼 -->
+                <button id="geachu-btn" onclick="sendGaechu()">👍 개추</button>
             </div>
 
-            <!-- 21개 알록달록 팔레트 -->
             <div class="palette-grid" id="palette-grid"></div>
 
             <div class="tools-row">
-                <button class="tool-btn active" onclick="setLineWidth(2, this)">✏️ 얇게</button>
-                <button class="tool-btn" onclick="setLineWidth(6, this)">✏️ 보통</button>
-                <button class="tool-btn" onclick="setLineWidth(12, this)">✏️ 두껍게</button>
+                <button class="tool-btn active" onclick="setLineWidth(1, this)">1단계 (극세)</button>
+                <button class="tool-btn" onclick="setLineWidth(3, this)">2단계 (얇게)</button>
+                <button class="tool-btn" onclick="setLineWidth(6, this)">3단계 (보통)</button>
+                <button class="tool-btn" onclick="setLineWidth(10, this)">4단계 (두껍게)</button>
+                <button class="tool-btn" onclick="setLineWidth(16, this)">5단계 (극두)</button>
                 <button class="tool-btn" onclick="setEraser(this)">🧹 지우개</button>
                 <button class="tool-btn" onclick="clearCanvasAction()">🗑️ 전체지우기</button>
-                <button class="tool-btn" style="background: #ff80ab; color: white;" onclick="leaveRoom()">🚪 나가기</button>
+                <button class="tool-btn" style="background: #ff5252; color: white;" onclick="leaveRoom()">🚪 나가기</button>
             </div>
         </div>
 
         <div class="chat-area">
+            <h4 style="color: #ff1493; margin-bottom: 6px;">CHAT & ANSWER</h4>
             <div id="chat-messages" class="chat-messages"></div>
-            <div class="chat-input-box">
-                <input type="text" id="chat-input" placeholder="정답/채팅 입력..." onkeypress="if(event.key==='Enter') sendChat()">
+            <div style="display: flex; gap: 4px; margin-top: 8px;">
+                <input type="text" id="chat-input" class="input-box" style="flex:1; width:auto; height:34px;" placeholder="정답/채팅 입력..." onkeypress="if(event.key==='Enter') sendChat()">
                 <button class="btn" style="padding: 4px 10px;" onclick="sendChat()">전송</button>
             </div>
         </div>
     </div>
 
-    <!-- 방 만들기 설정 모달 -->
+    <!-- Modals -->
     <div id="create-modal" class="modal">
         <div class="modal-content">
-            <h3 style="color: #d81b60;">⚙️ 방 설정하기</h3>
-            <label>방 제목</label>
-            <input type="text" id="room-title" value="신나는 포키파티 같이해요!">
-            <label>비밀번호 (선택)</label>
-            <input type="password" id="room-pass" placeholder="비밀번호 없음">
-            <label>최대 인원</label>
-            <select id="room-max">
-                <option value="4">4명</option>
-                <option value="6" selected>6명</option>
-                <option value="8">8명</option>
-            </select>
-            <label>총 라운드</label>
-            <select id="room-rounds">
-                <option value="2">2 라운드</option>
-                <option value="3" selected>3 라운드</option>
-                <option value="5">5 라운드</option>
-            </select>
-            <label>제한시간</label>
-            <select id="room-time">
-                <option value="45">45초</option>
-                <option value="60" selected>60초</option>
-                <option value="90">90초</option>
-            </select>
-            <label>제시어 주제</label>
-            <select id="room-category">
-                <option value="all" selected>전체 (종합)</option>
-                <option value="food">음식/디저트</option>
-                <option value="anime">애니/캐릭터</option>
-                <option value="meme">밈/유행어</option>
-                <option value="lol">롤(LoL)</option>
-            </select>
+            <h3 style="color: #ff1493;">⚙️ 방 설정하기</h3>
+            <label style="font-size:12px; font-weight:bold;">방 제목</label>
+            <input type="text" id="room-title" class="input-box" style="width:100%;" value="즐거운 포키파티 같이해요!">
+            <label style="font-size:12px; font-weight:bold;">비밀번호 (선택)</label>
+            <input type="password" id="room-pass" class="input-box" style="width:100%;" placeholder="비밀번호 없음">
+            <label style="font-size:12px; font-weight:bold;">최대 인원</label>
+            <select id="room-max" class="input-box" style="width:100%;"><option value="4">4명</option><option value="6" selected>6명</option><option value="8">8명</option></select>
+            <label style="font-size:12px; font-weight:bold;">총 라운드</label>
+            <select id="room-rounds" class="input-box" style="width:100%;"><option value="2">2 라운드</option><option value="3" selected>3 라운드</option><option value="5">5 라운드</option></select>
+            <label style="font-size:12px; font-weight:bold;">제한시간</label>
+            <select id="room-time" class="input-box" style="width:100%;"><option value="45">45초</option><option value="60" selected>60초</option><option value="90">90초</option></select>
+            <label style="font-size:12px; font-weight:bold;">주제</label>
+            <select id="room-category" class="input-box" style="width:100%;"><option value="all" selected>전체</option><option value="food">음식/디저트</option><option value="anime">애니/캐릭터</option><option value="meme">밈/유행어</option><option value="lol">롤(LoL)</option></select>
             <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;">
                 <button class="btn" style="background:#ccc;" onclick="closeCreateModal()">취소</button>
                 <button class="btn" onclick="submitCreateRoom()">만들기</button>
@@ -574,27 +592,30 @@ function getHTMLContent() {
         </div>
     </div>
 
+    <div id="shop-modal" class="modal">
+        <div class="modal-content">
+            <h3 style="color: #ff1493;">🛍️ 포키파티 상점</h3>
+            <div id="shop-items-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+            <button class="btn" style="background:#ccc; margin-top:10px;" onclick="closeShopModal()">닫기</button>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         let currentColor = '#000000';
-        let currentLineWidth = 2;
+        let currentLineWidth = 1;
         let isDrawing = false;
         let canDraw = false;
 
         const canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
 
-        // 21개 풍성한 물감 색상 정의
         const COLORS = [
-            '#000000', '#795548', '#888888', '#ffffff', 
-            '#ff0000', '#ff5722', '#ff9800', '#ffc107', 
-            '#ffeb3b', '#8bc34a', '#4caf50', '#009688', 
-            '#00bcd4', '#03a9f4', '#2196f3', '#3f51b5', 
-            '#673ab7', '#9c27b0', '#e91e63', '#f48fb1', '#ffd700'
+            '#000000', '#555555', '#aaaaaa', '#ffffff', '#ff0055', '#ff4081', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4',
+            '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800', '#ff5722', '#795548', '#8d6e63', '#ff80ab', '#b388ff', '#ffd700'
         ];
 
-        // 팔레트 동적 생성
         const paletteContainer = document.getElementById('palette-grid');
         COLORS.forEach((color, index) => {
             const dot = document.createElement('div');
@@ -612,7 +633,7 @@ function getHTMLContent() {
         function handleLogin() {
             const username = document.getElementById('auth-username').value;
             const password = document.getElementById('auth-password').value;
-            if (!username || !password) return alert("아이디/비밀번호를 입력해 주세요.");
+            if (!username || !password) return alert("아이디/비밀번호를 입력하세요.");
             socket.emit('login', { username, password });
         }
 
@@ -620,7 +641,7 @@ function getHTMLContent() {
             const username = document.getElementById('auth-username').value;
             const password = document.getElementById('auth-password').value;
             const nickname = document.getElementById('auth-nickname').value;
-            if (!username || !password || !nickname) return alert("아이디, 비밀번호, 닉네임을 모두 입력해 주세요.");
+            if (!username || !password || !nickname) return alert("아이디, 비밀번호, 닉네임을 모두 입력하세요.");
             socket.emit('register', { username, password, nickname });
         }
 
@@ -628,13 +649,27 @@ function getHTMLContent() {
         socket.on('authSuccess', data => alert(data.message));
 
         socket.on('loginSuccess', user => {
-            document.getElementById('user-profile-info').innerHTML = \`
-                <b>\${user.nickname}</b> (\${user.username})<br>
-                칭호: [\${user.equipped?.title || '신입'}]<br>
-                포인트: 🪙 \${user.points}pt
-            \`;
-            showScreen('loading-screen');
-            setTimeout(() => showScreen('lobby-screen'), 1200);
+            updateUserProfile(user);
+            showScreen('lobby-screen');
+        });
+
+        function updateUserProfile(user) {
+            document.getElementById('user-profile-info').innerHTML = `
+                <b>${user.equipped?.badge || ''} <span style="color:${user.equipped?.color || '#000'}">${user.nickname}</span></b> (${user.username})<br>
+                칭호: [${user.equipped?.title || '신입'}]<br>
+                포인트: 🪙 <b>${user.points}pt</b>
+            `;
+        }
+
+        socket.on('updateLobbyUsers', users => {
+            const list = document.getElementById('lobby-user-list');
+            list.innerHTML = '';
+            users.forEach(u => {
+                const item = document.createElement('div');
+                item.style.fontSize = '12px';
+                item.innerHTML = `🟢 ${u.equipped?.badge || ''} <span style="color:${u.equipped?.color || '#000'}; font-weight:bold;">${u.nickname}</span>`;
+                list.appendChild(item);
+            });
         });
 
         socket.on('updateRoomList', rooms => {
@@ -648,12 +683,66 @@ function getHTMLContent() {
                     if (r.isLocked) pass = prompt("비밀번호를 입력하세요:");
                     socket.emit('joinRoom', { roomId: r.id, password: pass });
                 };
-                card.innerHTML = \`
-                    <b>#\${r.roomNum} \${r.title}</b> \${r.isLocked ? '🔒' : ''} \${r.isPlaying ? '[진행 중]' : ''}<br>
-                    <small>주제: <b>\${r.category.toUpperCase()}</b> | 인원: \${r.currentPlayers}/\${r.maxPlayers} | \${r.totalRounds}라운드</small>
-                \`;
+                card.innerHTML = `
+                    <b>#${r.roomNum} ${r.title}</b> ${r.isLocked ? '🔒' : ''} ${r.isPlaying ? '[진행 중]' : ''}<br>
+                    <small>주제: <b>${r.category.toUpperCase()}</b> | 인원: ${r.currentPlayers}/${r.maxPlayers} | ${r.totalRounds}R</small>
+                `;
                 grid.appendChild(card);
             });
+        });
+
+        function sendLobbyChat() {
+            const input = document.getElementById('lobby-chat-input');
+            if (!input.value.trim()) return;
+            socket.emit('sendLobbyChat', input.value);
+            input.value = '';
+        }
+
+        socket.on('lobbyChat', ({ sender, text, equipped }) => {
+            const box = document.getElementById('lobby-chat-msgs');
+            const msg = document.createElement('div');
+            msg.innerHTML = `<b style="color:${equipped?.color || '#000'}">[${sender}]</b> ${text}`;
+            box.appendChild(msg);
+            box.scrollTop = box.scrollHeight;
+        });
+
+        // 상점
+        const SHOP_ITEMS_CLIENT = [
+            { id: 'title_artist', name: '🎨 피카소의 재래 (칭호)', price: 300 },
+            { id: 'title_master', name: '👑 그림의 신 (칭호)', price: 800 },
+            { id: 'color_pink', name: '💗 네온 핑크 닉네임', price: 400 },
+            { id: 'color_gold', name: '✨ 황금빛 닉네임', price: 600 },
+            { id: 'badge_angel', name: '👼 천사 아이콘', price: 350 },
+            { id: 'badge_devil', name: '😈 악마 아이콘', price: 350 }
+        ];
+
+        function openShopModal() {
+            const list = document.getElementById('shop-items-list');
+            list.innerHTML = '';
+            SHOP_ITEMS_CLIENT.forEach(i => {
+                const card = document.createElement('div');
+                card.className = 'shop-item-card';
+                card.style.display = 'flex';
+                card.style.justifyContent = 'space-between';
+                card.style.padding = '6px';
+                card.style.border = '2px solid #000';
+                card.style.background = '#fff';
+                card.innerHTML = `
+                    <span><b>${i.name}</b> (${i.price}pt)</span>
+                    <button class="btn" style="padding:4px 8px;" onclick="buyItem('${i.id}')">구매</button>
+                `;
+                list.appendChild(card);
+            });
+            document.getElementById('shop-modal').style.display = 'flex';
+        }
+
+        function closeShopModal() { document.getElementById('shop-modal').style.display = 'none'; }
+        function buyItem(id) { socket.emit('buyItem', id); }
+
+        socket.on('shopError', msg => alert(msg));
+        socket.on('shopSuccess', ({ user, message }) => {
+            alert(message);
+            updateUserProfile(user);
         });
 
         function openCreateModal() { document.getElementById('create-modal').style.display = 'flex'; }
@@ -690,7 +779,10 @@ function getHTMLContent() {
                 card.className = className;
                 const isHost = p.id === hostId ? ' 👑' : '';
                 const status = p.id === drawerId ? ' 🎨' : (solvedPlayers.includes(p.id) ? ' ✅' : '');
-                card.innerHTML = \`<span>\${p.badge || ''}\${p.name}\${isHost}\${status}</span><b>\${p.score}pt</b>\`;
+                card.innerHTML = `
+                    <span>${p.equipped?.badge || ''} <b style="color:${p.equipped?.color || '#000'}">${p.name}</b>${isHost}${status}</span>
+                    <b>${p.score}pt</b>
+                `;
                 list.appendChild(card);
             });
 
@@ -699,13 +791,34 @@ function getHTMLContent() {
 
         socket.on('turnStart', ({ isDrawer, word, time, round, totalRounds }) => {
             canDraw = isDrawer;
-            document.getElementById('word-display').innerText = \`제시어: \${word}\`;
-            document.getElementById('timer-display').innerText = \`⏳ 남은 시간: \${time}초\`;
-            document.getElementById('round-display').innerText = \`ROUND \${round} / \${totalRounds}\`;
+            document.getElementById('word-display').innerText = `제시어: ${word}`;
+            document.getElementById('timer-display').innerText = `⏳ 남은 시간: ${time}초`;
+            document.getElementById('round-display').innerText = `ROUND ${round} / ${totalRounds}`;
+            document.getElementById('geachu-btn').style.display = isDrawer ? 'none' : 'block';
         });
 
         socket.on('timerUpdate', time => {
-            document.getElementById('timer-display').innerText = \`⏳ 남은 시간: \${time}초\`;
+            document.getElementById('timer-display').innerText = `⏳ 남은 시간: ${time}초`;
+        });
+
+        // 개추 전송
+        function sendGaechu() {
+            socket.emit('sendGaechu');
+        }
+
+        // 개추 시각 연출 효과
+        socket.on('geachuEffect', ({ sender, drawerName }) => {
+            const wrapper = document.getElementById('canvas-wrapper');
+            const pop = document.createElement('div');
+            pop.className = 'geachu-pop';
+            pop.innerText = `👍 ${sender} 님의 개추! (+10pt)`;
+            
+            // 랜덤 위치 생성
+            pop.style.left = (Math.random() * 300 + 100) + 'px';
+            pop.style.top = (Math.random() * 200 + 150) + 'px';
+            
+            wrapper.appendChild(pop);
+            setTimeout(() => pop.remove(), 1200);
         });
 
         socket.on('correctAnswerOverlay', ({ winner }) => {
@@ -715,7 +828,7 @@ function getHTMLContent() {
             setTimeout(() => { overlay.style.display = 'none'; }, 2000);
         });
 
-        // 그림판 로직
+        // 캔버스 드로잉
         canvas.addEventListener('mousedown', (e) => {
             if (!canDraw) return;
             isDrawing = true;
@@ -789,7 +902,7 @@ function getHTMLContent() {
             const box = document.getElementById('chat-messages');
             const msg = document.createElement('div');
             msg.className = 'chat-msg' + (sender.includes('SYSTEM') ? ' system' : '');
-            msg.innerText = \`[\${sender}] \${text}\`;
+            msg.innerText = `[${sender}] ${text}`;
             box.appendChild(msg);
             box.scrollTop = box.scrollHeight;
         });
@@ -801,6 +914,6 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` Poki Party v1.1.0 Update Completed! Port: ${PORT}`);
+    console.log(` Poki Party v1.3.0 Major Update! Port: ${PORT}`);
     console.log(`=================================================`);
 });
