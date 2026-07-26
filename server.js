@@ -32,7 +32,6 @@ const SHOP_ITEMS = {
     ]
 };
 
-// DB 및 단어 파일 관리
 function loadUsersDB() {
     try {
         if (!fs.existsSync(DB_PATH)) fs.writeFileSync(DB_PATH, JSON.stringify({}), 'utf8');
@@ -81,7 +80,6 @@ function getPublicRoomList() {
     }));
 }
 
-// Socket.io 통신
 io.on('connection', (socket) => {
     let currentUser = { username: null, nickname: null, roomId: null };
 
@@ -177,7 +175,7 @@ io.on('connection', (socket) => {
         room.players.push(player);
 
         socket.emit('roomJoined', { ...room, isHost: room.hostId === socket.id });
-        io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: room.players[room.drawerIndex]?.id });
+        io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: room.players[room.drawerIndex]?.id, isPlaying: room.isPlaying });
         io.to(roomId).emit('chatMessage', { sender: 'SYSTEM', text: `${currentUser.nickname} 님이 입장하셨습니다!` });
         io.emit('updateRoomList', getPublicRoomList());
     }
@@ -189,6 +187,8 @@ io.on('connection', (socket) => {
         if (room.hostId !== socket.id) return socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 방장만 시작할 수 있습니다.' });
         if (room.players.length < 2) return socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 최소 2명 이상이어야 시작 가능합니다.' });
         if (room.isPlaying) return;
+        
+        io.to(roomId).emit('chatMessage', { sender: 'SYSTEM 🎉', text: '🎮 게임을 시작합니다!' });
         startGame(roomId);
     });
 
@@ -233,8 +233,7 @@ io.on('connection', (socket) => {
                 saveUsersDB(usersDB);
             }
 
-            io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: room.players[room.drawerIndex]?.id });
-            io.to(roomId).emit('correctAnswerOverlay', { winner: currentUser.nickname });
+            io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: room.players[room.drawerIndex]?.id, isPlaying: room.isPlaying });
             io.to(roomId).emit('chatMessage', { sender: 'SYSTEM 🎉', text: `[${solveOrder}등] ${currentUser.nickname} 님 정답! (+${earnedScore} Pt)` });
 
             if (room.solvedPlayers.length >= room.players.length - 1) {
@@ -268,7 +267,7 @@ io.on('connection', (socket) => {
                 clearInterval(room.timer);
                 delete rooms[roomId];
             } else {
-                io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: room.players[room.drawerIndex]?.id });
+                io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: room.players[room.drawerIndex]?.id, isPlaying: room.isPlaying });
             }
         }
 
@@ -312,6 +311,7 @@ function nextTurn(roomId) {
         room.isPlaying = false;
         const sorted = [...room.players].sort((a, b) => b.score - a.score);
         io.to(roomId).emit('gameOver', sorted);
+        io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: [], drawerId: null, isPlaying: false });
         io.to(roomId).emit('chatMessage', { sender: 'SYSTEM 🏆', text: `게임 종료! 1등: ${sorted[0]?.name || '없음'}님!` });
         io.emit('updateRoomList', getPublicRoomList());
         return;
@@ -321,7 +321,7 @@ function nextTurn(roomId) {
     room.currentWord = getRandomWord(room.category, room.usedWords);
     room.timeLeft = room.roundTime;
 
-    io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: drawer.id });
+    io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: drawer.id, isPlaying: room.isPlaying });
     io.to(drawer.id).emit('turnStart', { isDrawer: true, word: room.currentWord, time: room.roundTime, round: room.currentRound, totalRounds: room.totalRounds });
 
     room.players.forEach(p => {
@@ -350,8 +350,8 @@ function getHTMLContent() {
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>ポキパティ！！ (Poki Party v1.5.1)</title>
-    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+    <title>ポキパティ！！ (Poki Party v1.6.0)</title>
+    <link href="https://cdn.jsdelivr.net/gh/neodgm/neodgm-webfont@latest/neodgm.css" rel="stylesheet">
     <style>
         :root {
             --bg-color: #fde8f0;
@@ -362,7 +362,7 @@ function getHTMLContent() {
             --text-color: #4a2840;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'DotGothic16', monospace, sans-serif; image-rendering: pixelated; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Neodgm', 'DungGeunMo', monospace, sans-serif; image-rendering: pixelated; }
         body, html { width: 100vw; height: 100vh; background-color: var(--bg-color); color: var(--text-color); overflow: hidden; display: flex; justify-content: center; align-items: center; }
 
         .screen { display: none; width: 1280px; height: 800px; padding: 16px; background: #fff0f5; border: 4px solid var(--pixel-border); border-radius: 12px; box-shadow: 6px 6px 0px rgba(74, 40, 64, 0.2); position: relative; }
@@ -373,12 +373,13 @@ function getHTMLContent() {
         .pixel-box { background: var(--box-bg); border: 3px solid var(--pixel-border); box-shadow: 3px 3px 0px rgba(74, 40, 64, 0.15); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
         .box-header { background: var(--main-pink); color: #fff; padding: 6px 12px; font-weight: bold; font-size: 15px; border-bottom: 3px solid var(--pixel-border); text-shadow: 1px 1px 0px var(--pixel-border); }
 
-        .pixel-btn { background: #ffb6c1; border: 2.5px solid var(--pixel-border); color: var(--text-color); padding: 6px 12px; font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0px var(--pixel-border); border-radius: 4px; font-size: 13px; }
+        .pixel-btn { background: #ffb6c1; border: 2.5px solid var(--pixel-border); color: var(--text-color); padding: 6px 10px; font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0px var(--pixel-border); border-radius: 4px; font-size: 13px; }
         .pixel-btn:active { transform: translate(2px, 2px); box-shadow: 0px 0px 0px var(--pixel-border); }
         .pixel-btn.primary { background: #ff75a0; color: white; }
         .pixel-btn.warning { background: #ffb703; color: white; }
         .pixel-btn.danger { background: #ef476f; color: white; }
         .pixel-btn.success { background: #06d6a0; color: white; }
+        .pixel-btn.selected { background: #4a2840; color: white; border-color: #ff0055; }
 
         .lobby-header { text-align: center; margin-bottom: 12px; }
         .pixel-title { font-size: 40px; color: var(--dark-pink); text-shadow: 2px 2px 0px #fff, 4px 4px 0px var(--pixel-border); }
@@ -387,17 +388,21 @@ function getHTMLContent() {
         .room-card { background: #fff; border: 2px solid var(--pixel-border); border-radius: 6px; padding: 10px; cursor: pointer; box-shadow: 2px 2px 0px rgba(0,0,0,0.1); }
         .room-card:hover { background: #fff5f8; border-color: #ff0055; }
 
-        .game-header { display: flex; justify-content: space-between; align-items: center; background: var(--main-pink); border: 3px solid var(--pixel-border); padding: 8px 16px; color: white; margin-bottom: 12px; border-radius: 8px; }
-        .game-logo { font-size: 24px; font-weight: bold; text-shadow: 2px 2px 0px var(--pixel-border); }
-        
+        /* 인게임 헤더 가독성 강화 */
+        .game-header { display: grid; grid-template-columns: 220px 1fr 220px; align-items: center; background: var(--main-pink); border: 3px solid var(--pixel-border); padding: 8px 16px; color: white; margin-bottom: 12px; border-radius: 8px; text-shadow: 1.5px 1.5px 0px var(--pixel-border); }
+        .game-logo { font-size: 22px; font-weight: bold; }
+        .header-center { text-align: center; font-size: 22px; font-weight: bold; color: #ffffff; background: rgba(74, 40, 64, 0.25); padding: 4px 12px; border-radius: 6px; border: 2px solid var(--pixel-border); }
+        .header-right { display: flex; flex-direction: column; align-items: flex-end; font-size: 15px; gap: 2px; }
+
         .game-container { display: grid; grid-template-columns: 200px 1fr 340px; gap: 12px; flex: 1; height: calc(100% - 60px); }
         .game-main { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 
         #paint-canvas { background: #ffffff; cursor: crosshair; width: 800px; height: 480px; display: block; border: 3px solid var(--pixel-border); border-radius: 6px; }
 
         .palette-container { width: 800px; padding: 8px; gap: 6px; }
+        /* 13x2 팔레트 그리드 */
         .palette-grid { display: grid; grid-template-columns: repeat(13, 1fr); gap: 4px; margin-bottom: 6px; }
-        .color-swatch { width: 100%; height: 24px; border: 2px solid var(--pixel-border); cursor: pointer; border-radius: 3px; }
+        .color-swatch { width: 100%; height: 22px; border: 2px solid var(--pixel-border); cursor: pointer; border-radius: 3px; }
         .color-swatch.selected { outline: 2px solid #ff0055; transform: scale(1.15); z-index: 2; }
 
         .chat-box { height: 100%; }
@@ -468,11 +473,13 @@ function getHTMLContent() {
     <div id="game-room" class="screen">
         <header class="game-header">
             <div class="game-logo">ポキパティ！！</div>
-            <div style="display:flex; gap:20px; font-size:16px;">
-                <span id="round-display">ROUND 1 / 3</span>
+            <div class="header-center">
+                <span id="word-display" style="color:#a0ffb0;">제시어: ???</span>
+            </div>
+            <div class="header-right">
+                <span id="round-display" style="color:#ffffff;">ROUND 1 / 3</span>
                 <span id="timer-display" style="color:#ffcc00;">⏳ 대기 중...</span>
             </div>
-            <div id="word-display" style="font-size:18px; color:#a0ffb0;">제시어: ???</div>
         </header>
 
         <div class="game-container">
@@ -486,10 +493,13 @@ function getHTMLContent() {
                 <canvas id="paint-canvas" width="800" height="480"></canvas>
                 <div class="palette-container pixel-box">
                     <div class="palette-grid" id="palette-grid"></div>
-                    <div style="display:flex; gap:6px; justify-content:center;">
-                        <button class="pixel-btn tool-btn" onclick="setLineWidth(2, this)">✏️ 얇게</button>
-                        <button class="pixel-btn tool-btn" onclick="setLineWidth(6, this)">✏️ 보통</button>
-                        <button class="pixel-btn tool-btn" onclick="setLineWidth(12, this)">✏️ 두껍게</button>
+                    <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
+                        <!-- 펜 크기 5종류 제공 -->
+                        <button class="pixel-btn size-btn" onclick="setLineWidth(1, this)">✏️ 1px</button>
+                        <button class="pixel-btn size-btn selected" onclick="setLineWidth(3, this)">✏️ 3px</button>
+                        <button class="pixel-btn size-btn" onclick="setLineWidth(6, this)">✏️ 6px</button>
+                        <button class="pixel-btn size-btn" onclick="setLineWidth(12, this)">✏️ 12px</button>
+                        <button class="pixel-btn size-btn" onclick="setLineWidth(24, this)">✏️ 24px</button>
                         <button class="pixel-btn tool-btn" onclick="setEraser(this)">🧹 지우개</button>
                         <button class="pixel-btn danger tool-btn" onclick="clearCanvasAction()">🗑️ 전체지우기</button>
                         <button class="pixel-btn warning tool-btn" onclick="leaveRoom()">🚪 나가기</button>
@@ -530,7 +540,7 @@ function getHTMLContent() {
 
     <div id="shop-modal" class="modal">
         <div class="modal-content" style="width: 420px; max-height: 550px;">
-            <h3 style="color: var(--dark-pink);">🛒 v1.5.1 포인트 상점</h3>
+            <h3 style="color: var(--dark-pink);">🛒 v1.6.0 포인트 상점</h3>
             <div style="display:flex; gap:10px; margin-bottom:6px;">
                 <button class="pixel-btn primary" onclick="renderShopCategory('badges')">뱃지 목록</button>
                 <button class="pixel-btn warning" onclick="renderShopCategory('colors')">닉네임 색상</button>
@@ -546,7 +556,7 @@ function getHTMLContent() {
     <script>
         const socket = io();
         let currentColor = '#000000';
-        let currentLineWidth = 2;
+        let currentLineWidth = 3;
         let isDrawing = false;
         let canDraw = false;
         let myUserData = null;
@@ -554,9 +564,10 @@ function getHTMLContent() {
         const canvas = document.getElementById('paint-canvas');
         const ctx = canvas.getContext('2d');
 
+        // 정확히 26개 색상 (13개 x 2줄 대칭 배열)
         const PALETTE_COLORS = [
             "#000000", "#555555", "#888888", "#ffffff", "#ff0055", "#ff5555", "#ff9900", "#ffcc00", "#22cc55", "#00bbf9", "#0055ff", "#9b5de5", "#f15bb5",
-            "#4a2840", "#a0a0a0", "#d3d3d3", "#ffc0cb", "#ff85a2", "#ffb703", "#ffe66d", "#90be6d", "#43aa8b", "#4cc9f0", "#4895ef", "#7209b7"
+            "#2b1424", "#3d2b1f", "#a0a0a0", "#d3d3d3", "#ffc0cb", "#ff85a2", "#ffb703", "#ffe66d", "#90be6d", "#43aa8b", "#4cc9f0", "#4895ef", "#7209b7"
         ];
 
         const paletteContainer = document.getElementById('palette-grid');
@@ -714,7 +725,7 @@ function getHTMLContent() {
         function leaveRoom() { socket.emit('leaveRoom'); }
         function requestStartGame() { socket.emit('requestStartGame'); }
 
-        socket.on('updatePlayers', ({ players, hostId, solvedPlayers = [], drawerId }) => {
+        socket.on('updatePlayers', ({ players, hostId, solvedPlayers = [], drawerId, isPlaying }) => {
             const list = document.getElementById('game-player-list');
             list.innerHTML = '';
             players.forEach(p => {
@@ -731,7 +742,13 @@ function getHTMLContent() {
                 list.appendChild(card);
             });
 
-            document.getElementById('start-game-btn').style.display = (socket.id === hostId) ? 'block' : 'none';
+            // 게임 진행 중에는 게임 시작 버튼 완전 숨김 처리
+            const startBtn = document.getElementById('start-game-btn');
+            if (socket.id === hostId && !isPlaying) {
+                startBtn.style.display = 'block';
+            } else {
+                startBtn.style.display = 'none';
+            }
         });
 
         socket.on('turnStart', ({ isDrawer, word, time, round, totalRounds }) => {
@@ -788,7 +805,13 @@ function getHTMLContent() {
             socket.emit('clearCanvas');
         }
 
-        function setLineWidth(w) { currentLineWidth = w; }
+        // 펜 두께 설정 함수
+        function setLineWidth(w, btn) {
+            currentLineWidth = w;
+            document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('selected'));
+            if (btn) btn.classList.add('selected');
+        }
+
         function setEraser() { currentColor = '#ffffff'; }
 
         function sendChat() {
@@ -814,7 +837,7 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` Poki Party v1.5.1 Fixed Engine Engine Active!`);
+    console.log(` Poki Party v1.6.0 Fixed Engine Active!`);
     console.log(` Server running on Port: ${PORT}`);
     console.log(`=================================================`);
 });
