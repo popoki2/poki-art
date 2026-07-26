@@ -1,356 +1,786 @@
-data.anime = data.anime || [];
-data.meme = data.meme || [];
-data.lol = data.lol || [];
-        data.game = data.game || ['카데나', '메르세데스', '신궁', '루미너스', '라라', '엔젤릭버스터', '끝없는고통', '리스트레인트링', '컨티뉴어스링', '메이린', '레테', '아델', '카이저', '제논', '은월', '와일드헌터', '블래스터', '칼리', '아크', '데몬슬레이어', '메카닉', '스트라이커', '윈드브레이커', '섀도어', '나이트로드', '듀얼블레이드', '플레임위자드', '비숍', '팔라딘', '패스파인더', '야생의포효', '급속성장', '혼절시키기', '마술사의수습생', '혈법사탈노스', '에드윈벤클리프', '파멸의예언자', '티리온폴드링', '말리고스', '화염구', '마법차', '난투', '폭발의덫', '사술', '퀘스트중인모험가', '생각훔치기', '뒤틀린황천', '배틀메이', '왕의축', '불기둥', '야생의벗', '그롬마쉬헬스크림', '휘둘러치', '압도적인힘', '시체되살리기', '난투', '걸신들린무타누', '평등', '데스윙', '제왕타우릿산', '크림슨발록', '일리움', '보우마스터', '가젯잔경매인', '질리악스', '리로이젠킨스', '얼음회오리', '비겁한밀고자', '장의사', '흑기사', '두억시', '자쿰', '혼테일', '핑크빈', '진힐라', '더스크', '루시드', '칼로스', '세렌', '카링', '가디언엔젤슬라임', '우서', '안두인', '제이나', '굴단', '발리라', '말퓨리온', '일리단', '가로쉬', '이글거리는전쟁도끼', '그림자밟기', '마음가짐', '렉사르', '해적패치스', '정신자극', '얼음방패', '리노잭슨', '대마법사안토니다스', '스랄', '파풀라투스', '데미안', '스우', '아카이럼', '벨룸', '듄켈',];
-        data.object = data.object || ['시계', '포크레인', '에어컨', '김치냉장고', '엉덩이', '가슴', '분쇄기', '인형', '하츠네미쿠인형', '릴', '아이코스', '마일드세븐', '전자담배', '유산균', '냉장고', '선풍기', '스마트폰', '의자', '연필', '지우개', '안경'];
-        data.game = data.game || ['카데나', '메르세데스', '신궁', '루미너스', '라라', '엔젤릭버스터', '아델', '카이저', '제논', '은월', '비숍', '팔라딘', '패스파인더', '자쿰', '혼테일', '핑크빈', '진힐라', '더스크', '루시드', '칼로스', '세렌', '카링', '데미안', '스우', '아카이럼', '벨룸', '듄켈'];
-        data.object = data.object || ['시계', '포크레인', '에어컨', '김치냉장고', '냉장고', '선풍기', '스마트폰', '의자', '연필', '지우개', '안경'];
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const fs = require('fs');
+const path = require('path');
 
-data.all = Array.from(new Set([
-...data.food, ...data.anime, ...data.meme,
-@@ -118,6 +118,8 @@ io.on('connection', (socket) => {
-return;
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+
+const PORT = process.env.PORT || 3000;
+const DB_PATH = path.join(__dirname, 'usersDB.json');
+const WORDS_PATH = path.join(__dirname, 'wordsDB.json');
+
+// 유저 DB 로드 / 저장
+function loadUsersDB() {
+    try {
+        if (!fs.existsSync(DB_PATH)) {
+            fs.writeFileSync(DB_PATH, JSON.stringify({}), 'utf8');
+        }
+        const data = fs.readFileSync(DB_PATH, 'utf8');
+        return JSON.parse(data || '{}');
+    } catch (e) {
+        console.error("DB Load Error:", e);
+        return {};
+    }
 }
 
-        // 최신 DB 상태 재로드 후 검증
-        usersDB = loadUsersDB();
-if (usersDB[username]) {
-socket.emit('authError', '이미 존재하는 아이디입니다.');
-return;
-@@ -140,6 +142,7 @@ io.on('connection', (socket) => {
-});
-
-socket.on('login', ({ username, password }) => {
-        usersDB = loadUsersDB(); // DB 동기화
-const user = usersDB[username];
-
-if (!user) {
-@@ -154,14 +157,15 @@ io.on('connection', (socket) => {
-
-currentUser.username = username;
-currentUser.nickname = user.nickname;
-        lobbyUsers[socket.id] = { id: socket.id, ...user };
-        lobbyUsers[socket.id] = { id: socket.id, username, ...user };
-
-socket.emit('loginSuccess', { username, ...user, shopCatalog: SHOP_ITEMS });
-io.emit('updateLobbyUsers', Object.values(lobbyUsers));
-socket.emit('updateRoomList', getPublicRoomList());
-});
-
-socket.on('buyItem', ({ itemType, itemId }) => {
-        usersDB = loadUsersDB();
-const user = usersDB[currentUser.username];
-if (!user) return;
-
-@@ -183,6 +187,7 @@ io.on('connection', (socket) => {
-});
-
-socket.on('equipItem', ({ itemType, itemId }) => {
-        usersDB = loadUsersDB();
-const user = usersDB[currentUser.username];
-if (!user || !user.inventory.includes(itemId)) return;
-
-@@ -198,7 +203,7 @@ io.on('connection', (socket) => {
+function saveUsersDB(db) {
+    try {
+        fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf8');
+    } catch (e) {
+        console.error("DB Save Error:", e);
+    }
 }
 
-saveUsersDB(usersDB);
-        lobbyUsers[socket.id] = { id: socket.id, ...user };
-        lobbyUsers[socket.id] = { id: socket.id, username: currentUser.username, ...user };
+// 외부 wordsDB.json 파일 실시간 로드
+function loadWordsDB() {
+    try {
+        if (!fs.existsSync(WORDS_PATH)) {
+            console.error("❌ wordsDB.json 파일이 존재하지 않습니다!");
+            return { food: [], anime: [], meme: [], lol: [], all: [] };
+        }
+        const raw = fs.readFileSync(WORDS_PATH, 'utf8');
+        const parsed = JSON.parse(raw);
+        
+        // 전체 단어 통합 (중복 제거)
+        const allWords = Array.from(new Set([
+            ...(parsed.food || []),
+            ...(parsed.anime || []),
+            ...(parsed.meme || []),
+            ...(parsed.lol || [])
+        ]));
 
-socket.emit('profileUpdated', user);
-io.emit('updateLobbyUsers', Object.values(lobbyUsers));
-@@ -222,6 +227,7 @@ io.on('connection', (socket) => {
-maxPlayers: parseInt(roomConfig.maxPlayers) || 6,
-roundTime: parseInt(roomConfig.roundTime) || 60,
-category: roomConfig.category || 'all',
-            hostId: socket.id, // 방장 설정
-players: [],
-drawerIndex: -1,
-currentWord: '',
-@@ -243,13 +249,15 @@ io.on('connection', (socket) => {
-if (!room) return socket.emit('joinError', '존재하지 않는 방입니다.');
-if (room.password && room.password !== password) return socket.emit('joinError', '비밀번호가 일치하지 않습니다!');
-if (room.players.length >= room.maxPlayers) return socket.emit('joinError', '방 인원이 가득 찼습니다.');
-        if (room.isPlaying) return socket.emit('joinError', '이미 게임이 진행 중인 방입니다.');
+        parsed.all = allWords;
+        return parsed;
+    } catch (e) {
+        console.error("❌ wordsDB.json 파일 로드 오류:", e);
+        return { food: [], anime: [], meme: [], lol: [], all: [] };
+    }
+}
 
-delete lobbyUsers[socket.id];
-io.emit('updateLobbyUsers', Object.values(lobbyUsers));
+let usersDB = loadUsersDB();
+let wordsDB = loadWordsDB();
 
-currentUser.roomId = roomId;
-socket.join(roomId);
+// 무작위 단어 추출 함수 (Fisher-Yates 기반)
+function getRandomWord(category, usedWords = []) {
+    // 제시어 JSON 다시 로드 (실시간 수정 가능)
+    wordsDB = loadWordsDB();
+    
+    let list = wordsDB[category] || wordsDB.all;
+    if (!list || list.length === 0) list = wordsDB.all;
 
+    let available = list.filter(w => !usedWords.includes(w));
+    if (available.length === 0) {
+        available = list; // 모두 소비했으면 리셋
+        usedWords.length = 0;
+    }
+
+    const randomIndex = Math.floor(Math.random() * available.length);
+    const selected = available[randomIndex];
+    usedWords.push(selected);
+    return selected;
+}
+
+const rooms = {};
+const lobbyUsers = {};
+
+const SHOP_ITEMS = [
+    { id: 'title_1', type: 'title', name: '🎨 화가', price: 100 },
+    { id: 'badge_1', type: 'badge', name: '👑 왕관', price: 200 },
+    { id: 'border_1', type: 'border', name: '✨ 황금 테두리', price: 500, style: 'border: 2px solid gold;' }
+];
+
+function getPublicRoomList() {
+    return Object.values(rooms).map(r => ({
+        id: r.id,
+        roomNum: r.roomNum,
+        title: r.title,
+        category: r.category,
+        currentPlayers: r.players.length,
+        maxPlayers: r.maxPlayers,
+        isLocked: !!r.password,
+        isPlaying: r.isPlaying
+    }));
+}
+
+let roomCounter = 1;
+
+io.on('connection', (socket) => {
+    let currentUser = { username: null, nickname: null, roomId: null };
+
+    // 회원가입
+    socket.on('register', ({ username, password, nickname }) => {
         usersDB = loadUsersDB();
-const user = usersDB[currentUser.username] || {};
-const player = { 
-id: socket.id, 
-@@ -262,14 +270,27 @@ io.on('connection', (socket) => {
-};
-room.players.push(player);
-
-        socket.emit('roomJoined', room);
-        io.to(roomId).emit('updatePlayers', room.players);
-        socket.emit('roomJoined', { ...room, isHost: room.hostId === socket.id });
-        io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId });
-io.to(roomId).emit('chatMessage', { sender: 'SYSTEM', text: `${currentUser.nickname} 님이 입장하셨습니다!` });
-io.emit('updateRoomList', getPublicRoomList());
+        if (usersDB[username]) {
+            return socket.emit('authError', '이미 존재하는 아이디입니다.');
+        }
+        usersDB[username] = {
+            username,
+            password,
+            nickname: nickname || username,
+            points: 500,
+            exp: 0,
+            level: 1,
+            inventory: [],
+            equipped: { title: '신입', badge: '🔰', borderStyle: '' }
+        };
+        saveUsersDB(usersDB);
+        socket.emit('authSuccess', { message: '회원가입이 완료되었습니다! 로그인 해주세요.' });
     });
 
-    // 🎯 방장에 의한 수동 게임 시작
+    // 로그인
+    socket.on('login', ({ username, password }) => {
+        usersDB = loadUsersDB();
+        const user = usersDB[username];
+
+        if (!user || user.password !== password) {
+            return socket.emit('authError', '아이디 또는 비밀번호가 일치하지 않습니다.');
+        }
+
+        const isAlreadyLoggedIn = Object.values(lobbyUsers).some(u => u.username === username);
+        if (isAlreadyLoggedIn) {
+            return socket.emit('authError', '이미 접속 중인 계정입니다.');
+        }
+
+        currentUser.username = username;
+        currentUser.nickname = user.nickname;
+
+        lobbyUsers[socket.id] = { id: socket.id, username, ...user };
+
+        socket.emit('loginSuccess', { username, ...user, shopCatalog: SHOP_ITEMS });
+        io.emit('updateLobbyUsers', Object.values(lobbyUsers));
+        socket.emit('updateRoomList', getPublicRoomList());
+    });
+
+    // 방 생성
+    socket.on('createRoom', (roomConfig) => {
+        if (!currentUser.username) return;
+        
+        const roomId = 'room_' + Date.now();
+        rooms[roomId] = {
+            id: roomId,
+            roomNum: roomCounter++,
+            title: roomConfig.title || '함께 그림 그려요!',
+            password: roomConfig.password || '',
+            maxPlayers: parseInt(roomConfig.maxPlayers) || 6,
+            roundTime: parseInt(roomConfig.roundTime) || 60,
+            category: roomConfig.category || 'all', // 테마: food, anime, meme, lol, all
+            hostId: socket.id,
+            players: [],
+            drawerIndex: -1,
+            currentWord: '',
+            usedWords: [],
+            timeLeft: 0,
+            timer: null,
+            isPlaying: false,
+            solvedPlayers: [],
+            canvasData: []
+        };
+
+        joinRoomAction(socket, roomId, roomConfig.password, currentUser);
+    });
+
+    // 방 입장
+    socket.on('joinRoom', ({ roomId, password }) => {
+        if (!currentUser.username) return;
+        joinRoomAction(socket, roomId, password, currentUser);
+    });
+
+    function joinRoomAction(socket, roomId, password, currentUser) {
+        const room = rooms[roomId];
+        if (!room) return socket.emit('joinError', '존재하지 않는 방입니다.');
+        if (room.password && room.password !== password) return socket.emit('joinError', '비밀번호가 일치하지 않습니다!');
+        if (room.players.length >= room.maxPlayers) return socket.emit('joinError', '방 인원이 가득 찼습니다.');
+        if (room.isPlaying) return socket.emit('joinError', '이미 게임이 진행 중인 방입니다.');
+
+        delete lobbyUsers[socket.id];
+        io.emit('updateLobbyUsers', Object.values(lobbyUsers));
+
+        currentUser.roomId = roomId;
+        socket.join(roomId);
+
+        usersDB = loadUsersDB();
+        const user = usersDB[currentUser.username] || {};
+        const player = {
+            id: socket.id,
+            username: currentUser.username,
+            name: currentUser.nickname,
+            score: 0,
+            badge: user.equipped?.badge || '🔰',
+            title: user.equipped?.title || '신입',
+            borderStyle: user.equipped?.borderStyle || ''
+        };
+        room.players.push(player);
+
+        socket.emit('roomJoined', { ...room, isHost: room.hostId === socket.id });
+        io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: room.players[room.drawerIndex]?.id });
+        io.to(roomId).emit('chatMessage', { sender: 'SYSTEM', text: `${currentUser.nickname} 님이 입장하셨습니다!` });
+        io.emit('updateRoomList', getPublicRoomList());
+
+        socket.emit('loadCanvas', room.canvasData || []);
+    }
+
+    // 게임 시작
     socket.on('requestStartGame', () => {
         const roomId = currentUser.roomId;
         if (!roomId || !rooms[roomId]) return;
         const room = rooms[roomId];
 
-        if (room.players.length >= 2 && !room.isPlaying) {
-            startGame(roomId);
         if (room.hostId !== socket.id) {
             return socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 방장만 게임을 시작할 수 있습니다.' });
-}
+        }
         if (room.players.length < 2) {
             return socket.emit('chatMessage', { sender: 'SYSTEM', text: '❌ 최소 2명 이상의 플레이어가 필요합니다.' });
         }
         if (room.isPlaying) return;
 
         startGame(roomId);
-});
+    });
 
-socket.on('leaveRoom', () => { leaveCurrentRoom(socket); });
-@@ -299,24 +320,22 @@ io.on('connection', (socket) => {
+    // 그림 그리기 동기화
+    socket.on('draw', (drawData) => {
+        const roomId = currentUser.roomId;
+        if (!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
 
-if (drawer) {
-drawer.score += 20;
+        if (room.players[room.drawerIndex]?.id === socket.id) {
+            room.canvasData.push(drawData);
+            socket.to(roomId).emit('draw', drawData);
+        }
+    });
+
+    socket.on('clearCanvas', () => {
+        const roomId = currentUser.roomId;
+        if (!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+        if (room.players[room.drawerIndex]?.id === socket.id) {
+            room.canvasData = [];
+            io.to(roomId).emit('clearCanvas');
+        }
+    });
+
+    // 채팅 및 정답 채점
+    socket.on('chatMessage', (msg) => {
+        const roomId = currentUser.roomId;
+        if (!roomId || !rooms[roomId]) {
+            return io.emit('lobbyChat', { sender: currentUser.nickname, text: msg });
+        }
+
+        const room = rooms[roomId];
+        const isDrawer = room.players[room.drawerIndex]?.id === socket.id;
+        const isAlreadySolved = room.solvedPlayers.includes(socket.id);
+
+        if (room.isPlaying && !isDrawer && !isAlreadySolved && msg.trim() === room.currentWord) {
+            room.solvedPlayers.push(socket.id);
+
+            const solveOrder = room.solvedPlayers.length;
+            const baseScore = Math.max(150 - (solveOrder - 1) * 20, 50);
+            const timeRatio = room.timeLeft / room.roundTime;
+            const earnedScore = Math.max(Math.floor(baseScore * (0.5 + timeRatio * 0.5)), 30);
+
+            const player = room.players.find(p => p.id === socket.id);
+            if (player) player.score += earnedScore;
+
+            const drawer = room.players[room.drawerIndex];
+            if (drawer) drawer.score += 20;
+
             usersDB = loadUsersDB();
-if (usersDB[drawer.username]) {
-usersDB[drawer.username].points += 10;
-usersDB[drawer.username].exp += 5;
-saveUsersDB(usersDB);
-}
-}
+            if (usersDB[currentUser.username]) {
+                const u = usersDB[currentUser.username];
+                u.points += earnedScore;
+                u.exp += Math.floor(earnedScore * 0.8);
+                
+                const neededExp = u.level * 100;
+                if (u.exp >= neededExp) {
+                    u.exp -= neededExp;
+                    u.level += 1;
+                    socket.emit('chatMessage', { sender: 'SYSTEM 🎊', text: `축하합니다! 레벨이 상승하여 [LV.${u.level}] 이 되었습니다!` });
+                }
+                saveUsersDB(usersDB);
+                socket.emit('profileUpdated', u);
+            }
 
-        io.to(roomId).emit('updatePlayers', room.players);
-        io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId });
-io.to(roomId).emit('likeEffect', { sender: currentUser.nickname });
-io.to(roomId).emit('chatMessage', { 
-sender: 'SYSTEM 👍', 
-text: `${currentUser.nickname} 님이 출제자에게 개추를 박았습니다! (출제자 +20pt)` 
-});
-});
+            io.to(roomId).emit('updatePlayers', { 
+                players: room.players, 
+                hostId: room.hostId, 
+                solvedPlayers: room.solvedPlayers, 
+                drawerId: drawer?.id 
+            });
+            io.to(roomId).emit('correctAnswerOverlay', { winner: currentUser.nickname });
+            io.to(roomId).emit('chatMessage', { 
+                sender: 'SYSTEM 🎉', 
+                text: `[${solveOrder}등 정답!] ${currentUser.nickname} 님이 정답을 맞혔습니다! (+${earnedScore}pt)` 
+            });
 
-    // ==========================================
-    // 🎯 [핵심] 점수 차등 계산 및 DB 연동 로직
-    // ==========================================
-socket.on('chatMessage', (msg) => {
-const roomId = currentUser.roomId;
-if (!roomId || !rooms[roomId]) return;
-@@ -340,45 +359,37 @@ io.on('connection', (socket) => {
-if (player) {
-room.solvedPlayers.push(socket.id);
+            if (room.solvedPlayers.length >= room.players.length - 1) {
+                clearTimeout(room.timer);
+                nextTurn(roomId);
+            }
+            return;
+        }
 
-                // 1. 등수 기반 기본 점수 (1등: 150점, 2등: 130점, 3등: 110점...)
-                const solveOrder = room.solvedPlayers.length; // 1, 2, 3...
-                const solveOrder = room.solvedPlayers.length;
-const baseScore = Math.max(150 - (solveOrder - 1) * 20, 50);
+        io.to(roomId).emit('chatMessage', { sender: currentUser.nickname, text: msg });
+    });
 
-                // 2. 제한시간 비율 계산 (남은 시간 / 전체 라운드 시간)
-const timeRatio = room.timeLeft / room.roundTime;
+    socket.on('leaveRoom', () => { leaveCurrentRoom(socket); });
+    socket.on('disconnect', () => {
+        leaveCurrentRoom(socket);
+        delete lobbyUsers[socket.id];
+        io.emit('updateLobbyUsers', Object.values(lobbyUsers));
+    });
 
-                // 3. 최종 차등 점수 산출 (최소 30점 보장)
-const earnedScore = Math.max(Math.floor(baseScore * (0.5 + timeRatio * 0.5)), 30);
+    function leaveCurrentRoom(socket) {
+        const roomId = currentUser.roomId;
+        if (!roomId || !rooms[roomId]) return;
 
-                // 인게임 룸 점수 반영
-player.score += earnedScore;
-                if (drawer) drawer.score += 20; // 정답자가 나올 때마다 출제자도 보너스
-                if (drawer) drawer.score += 20;
+        const room = rooms[roomId];
+        const playerIndex = room.players.findIndex(p => p.id === socket.id);
 
-                // 4. 유저 DB(usersDB.json) 개인 계정 포인트 & 경험치 적립
-                usersDB = loadUsersDB();
-if (usersDB[currentUser.username]) {
-const u = usersDB[currentUser.username];
-                    u.points += earnedScore; // 맞힌 차등 점수가 그대로 개인 어카운트 포인트로 적립!
-                    u.points += earnedScore;
-u.exp += Math.floor(earnedScore * 0.8);
+        if (playerIndex !== -1) {
+            room.players.splice(playerIndex, 1);
+            socket.leave(roomId);
 
-                    // 레벨업 체크
-const neededExp = u.level * 100;
-if (u.exp >= neededExp) {
-u.exp -= neededExp;
-u.level += 1;
-socket.emit('chatMessage', { sender: 'SYSTEM 🎊', text: `축하합니다! 레벨이 상승하여 [LV.${u.level}] 이 되었습니다!` });
-}
-saveUsersDB(usersDB);
-                    socket.emit('profileUpdated', u); // 프로필 UI 최신화
-                    socket.emit('profileUpdated', u);
-}
-
-                io.to(roomId).emit('updatePlayers', room.players);
-                io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId });
-io.to(roomId).emit('correctAnswerOverlay', { winner: currentUser.nickname, word: room.currentWord });
-io.to(roomId).emit('chatMessage', { 
-sender: 'SYSTEM 🎉', 
-text: `[${solveOrder}등 정답!] ${currentUser.nickname} 님 정답(${room.currentWord})! (+${earnedScore}pt 획득)` 
-});
-
-                // 모든 플레이어가 맞힌 경우 다음 턴으로 즉시 전환
-if (room.solvedPlayers.length >= room.players.length - 1) {
-nextTurn(roomId);
-}
-@@ -412,8 +423,14 @@ function leaveCurrentRoom(socket) {
-if (playerIndex !== -1) {
-room.players.splice(playerIndex, 1);
-socket.leave(roomId);
-
-            // 방장이 나간 경우 다음 사람에게 방장 위임
             if (room.hostId === socket.id && room.players.length > 0) {
                 room.hostId = room.players[0].id;
             }
 
-            io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId });
-
-            io.to(roomId).emit('updatePlayers', room.players);
-if (room.players.length === 0) {
-clearInterval(room.timer);
-delete rooms[roomId];
-@@ -441,6 +458,12 @@ function startGame(roomId) {
-room.isPlaying = true;
-room.currentRound = 1;
-room.drawerIndex = -1;
-    
-    // 점수 초기화
-    room.players.forEach(p => p.score = 0);
-    io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId });
-    io.emit('updateRoomList', getPublicRoomList());
-
-nextTurn(roomId);
-}
-
-@@ -462,14 +485,15 @@ function nextTurn(roomId) {
-room.isPlaying = false;
-const sorted = [...room.players].sort((a, b) => b.score - a.score);
-
-        // 최종 1등 유저에게 추가 우승 상금 적립
-        usersDB = loadUsersDB();
-if (sorted[0] && usersDB[sorted[0].username]) {
-usersDB[sorted[0].username].points += 300;
-usersDB[sorted[0].username].exp += 100;
-saveUsersDB(usersDB);
-}
-
-io.to(roomId).emit('gameOver', sorted);
-        io.emit('updateRoomList', getPublicRoomList());
-return;
-}
-
-@@ -830,6 +854,8 @@ function getHTMLContent() {
-                   <div class="window-header" style="font-size:11px;">PLAYERS</div>
-                   <div id="game-player-list" style="margin-top:6px;"></div>
-               </div>
-                <!-- 🎯 방장 전용 게임 시작 버튼 -->
-                <button id="start-game-btn" class="tool-btn" onclick="requestStartGame()" style="display:none; width:100%; margin-top:10px; background:#4caf50; color:#fff; font-size:14px; padding:8px;">▶️ 게임 시작</button>
-           </div>
-
-           <div id="canvas-container">
-@@ -894,6 +920,7 @@ function getHTMLContent() {
-       }
-
-       socket.on('authError', (msg) => alert(msg));
-        socket.on('joinError', (msg) => alert(msg));
-       socket.on('authSuccess', (data) => {
-           alert(data.message);
-           toggleAuthMode('login');
-@@ -912,7 +939,7 @@ function getHTMLContent() {
-               loadingOverlay.style.display = 'none';
-               document.getElementById('lobby-screen').style.display = 'flex';
-               updateProfileUI(userData);
-            }, 1800);
-            }, 1000);
-       });
-
-       function updateProfileUI(u) {
-@@ -1031,9 +1058,7 @@ function getHTMLContent() {
-           socket.emit('fillCanvas', currentColor);
-       }
-
-        function sendLike() {
-            socket.emit('sendLike');
-        }
-        function sendLike() { socket.emit('sendLike'); }
-
-       socket.on('likeEffect', (d) => {
-           const effect = document.getElementById('like-effect');
-@@ -1056,7 +1081,7 @@ function getHTMLContent() {
-               const item = document.createElement('div');
-               item.className = 'user-item';
-               item.style = u.borderStyle || '';
-                item.innerText = \`[\${u.title || '포키'}] \${u.badge || '🌸'} \${u.nickname} (LV.\${u.level || 1})\`;
-                item.innerText = \`[\${u.title || '신입'}] \${u.badge || '🔰'} \${u.nickname} (LV.\${u.level || 1})\`;
-               box.appendChild(item);
-           });
-       });
-@@ -1071,7 +1096,7 @@ function getHTMLContent() {
-               card.onclick = () => joinRoomById(r.id, r.isLocked);
-               card.innerHTML = \`
-                   <div style="font-weight:900; font-size:14px; display:flex; justify-content:space-between;">
-                        <span>#\${r.roomNum} \${r.title}</span><span>\${r.isLocked ? '🔒' : '🔓'}</span>
-                        <span>#\${r.roomNum} \${r.title}</span><span>\${r.isLocked ? '🔒' : '🔓'}\${r.isPlaying ? ' [게임 중]' : ''}</span>
-                   </div>
-                   <div style="font-size:11px; color:#ad1457;">[주제: \${r.category.toUpperCase()}] | 인원: \${r.currentPlayers}/\${r.maxPlayers}</div>
-               \`;
-@@ -1114,9 +1139,9 @@ function getHTMLContent() {
-       }
-
-       function quickJoin() {
-            const available = currentRoomList.find(r => !r.isLocked && r.currentPlayers < r.maxPlayers);
-            const available = currentRoomList.find(r => !r.isLocked && !r.isPlaying && r.currentPlayers < r.maxPlayers);
-           if (available) socket.emit('joinRoom', { roomId: available.id, password: '' });
-            else alert('입장 가능한 공개 방이 없습니다.');
-            else alert('입장 가능한 대기 중인 공개 방이 없습니다.');
-       }
-
-       socket.on('roomJoined', (room) => {
-@@ -1125,6 +1150,10 @@ function getHTMLContent() {
-           document.getElementById('game-room-title').innerText = room.title;
-       });
-
-        function requestStartGame() {
-            socket.emit('requestStartGame');
-        }
-
-       function confirmLeaveRoom() {
-           if (confirm("퇴장하시겠습니까?")) {
-               socket.emit('leaveRoom');
-@@ -1133,16 +1162,25 @@ function getHTMLContent() {
-           }
-       }
-
-        socket.on('updatePlayers', (players) => {
-        socket.on('updatePlayers', ({ players, hostId }) => {
-           const list = document.getElementById('game-player-list');
-           list.innerHTML = '';
-           players.forEach(p => {
-               const card = document.createElement('div');
-               card.className = 'player-card';
-               card.style = p.borderStyle || '';
-                card.innerHTML = \`<span>\${p.badge || ''} \${p.name}</span><span style="color:#d81b60;">\${p.score}pt</span>\`;
-                const isHostTag = (p.id === hostId) ? ' 👑' : '';
-                card.innerHTML = \`<span>\${p.badge || ''} \${p.name}\${isHostTag}</span><span style="color:#d81b60;">\${p.score}pt</span>\`;
-               list.appendChild(card);
-           });
-
-            // 내가 방장이면 시작 버튼 표시
-            const startBtn = document.getElementById('start-game-btn');
-            if (socket.id === hostId) {
-                startBtn.style.display = 'block';
+            if (room.players.length === 0) {
+                clearInterval(room.timer);
+                delete rooms[roomId];
             } else {
-                startBtn.style.display = 'none';
+                io.to(roomId).emit('updatePlayers', { 
+                    players: room.players, 
+                    hostId: room.hostId, 
+                    solvedPlayers: room.solvedPlayers, 
+                    drawerId: room.players[room.drawerIndex]?.id 
+                });
             }
-       });
+        }
 
-       socket.on('turnStart', (data) => {
-@@ -1187,6 +1225,6 @@ function getHTMLContent() {
+        currentUser.roomId = null;
+        lobbyUsers[socket.id] = { id: socket.id, username: currentUser.username, ...usersDB[currentUser.username] };
+        
+        socket.emit('leftRoom');
+        io.emit('updateLobbyUsers', Object.values(lobbyUsers));
+        io.emit('updateRoomList', getPublicRoomList());
+    }
+});
+
+function startGame(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    room.isPlaying = true;
+    room.currentRound = 1;
+    room.drawerIndex = -1;
+    room.usedWords = [];
+    room.players.forEach(p => p.score = 0);
+
+    io.emit('updateRoomList', getPublicRoomList());
+    nextTurn(roomId);
+}
+
+function nextTurn(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    room.canvasData = [];
+    io.to(roomId).emit('clearCanvas');
+    room.solvedPlayers = [];
+
+    room.drawerIndex++;
+    if (room.drawerIndex >= room.players.length) {
+        room.isPlaying = false;
+        const sorted = [...room.players].sort((a, b) => b.score - a.score);
+
+        if (sorted[0] && usersDB[sorted[0].username]) {
+            usersDB[sorted[0].username].points += 300;
+            usersDB[sorted[0].username].exp += 100;
+            saveUsersDB(usersDB);
+        }
+
+        io.to(roomId).emit('gameOver', sorted);
+        io.emit('updateRoomList', getPublicRoomList());
+        return;
+    }
+
+    const drawer = room.players[room.drawerIndex];
+    // wordsDB.json에서 해당 카테고리(room.category)의 제시어를 무작위 선택
+    room.currentWord = getRandomWord(room.category, room.usedWords);
+    room.timeLeft = room.roundTime;
+
+    io.to(roomId).emit('updatePlayers', { 
+        players: room.players, 
+        hostId: room.hostId, 
+        solvedPlayers: room.solvedPlayers, 
+        drawerId: drawer.id 
+    });
+
+    io.to(drawer.id).emit('turnStart', { isDrawer: true, word: room.currentWord, time: room.roundTime });
+    
+    room.players.forEach(p => {
+        if (p.id !== drawer.id) {
+            io.to(p.id).emit('turnStart', { isDrawer: false, word: '???', time: room.roundTime });
+        }
+    });
+
+    clearInterval(room.timer);
+    room.timer = setInterval(() => {
+        room.timeLeft--;
+        io.to(roomId).emit('timerUpdate', room.timeLeft);
+
+        if (room.timeLeft <= 0) {
+            clearInterval(room.timer);
+            io.to(roomId).emit('chatMessage', { sender: 'SYSTEM ⏰', text: `시간 종료! 정답은 [ ${room.currentWord} ] 이었습니다.` });
+            setTimeout(() => nextTurn(roomId), 3000);
+        }
+    }, 1000);
+}
+
+// 웹 페이지 제공
+app.get('/', (req, res) => {
+    res.send(getHTMLContent());
+});
+
+function getHTMLContent() {
+    return `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Poki Party - Catch Mind</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'MapleStory', sans-serif, cursive; }
+        body { background: #fce4ec; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        
+        #auth-screen, #lobby-screen, #game-room { display: none; width: 950px; height: 680px; background: #fff; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 4px solid #f48fb1; padding: 20px; position: relative; }
+        #auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; }
+
+        .input-box { width: 280px; padding: 10px; border: 2px solid #f48fb1; border-radius: 8px; outline: none; font-size: 14px; }
+        .btn { padding: 10px 20px; background: #f06292; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; }
+        .btn:hover { background: #ec407a; }
+
+        #lobby-screen { display: flex; gap: 20px; }
+        .lobby-side { width: 250px; background: #fff5f8; border-radius: 12px; padding: 15px; display: flex; flex-direction: column; gap: 15px; }
+        .lobby-main { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+        .room-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; overflow-y: auto; max-height: 480px; }
+        .room-card { background: #fff; border: 2px solid #f8bbd0; border-radius: 8px; padding: 12px; cursor: pointer; transition: 0.2s; }
+        .room-card:hover { border-color: #f06292; transform: translateY(-2px); }
+
+        #game-room { grid-template-columns: 200px 1fr 240px; gap: 12px; height: 680px; }
+        
+        .player-list { background: #fff5f8; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+        .player-card { background: #fff; border: 2px solid #f8bbd0; padding: 8px; border-radius: 6px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .player-card.is-drawer { background: #fff9c4; border-color: #fbc02d; font-weight: bold; }
+        .player-card.is-solved { background: #c8e6c9; border-color: #4caf50; }
+
+        .canvas-area { display: flex; flex-direction: column; align-items: center; gap: 8px; position: relative; }
+        #canvas-wrapper { position: relative; border: 3px solid #f48fb1; border-radius: 8px; background: #fff; overflow: hidden; }
+        canvas { display: block; cursor: crosshair; }
+        
+        .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; width: 480px; justify-content: center; }
+        .color-dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid #ddd; }
+        .color-dot.active { border: 2px solid #000; transform: scale(1.15); }
+        .tool-btn { padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; }
+        .tool-btn.active { background: #f06292; color: white; font-weight: bold; }
+
+        .chat-area { display: flex; flex-direction: column; background: #fff5f8; border-radius: 10px; padding: 10px; height: 100%; }
+        .chat-messages { flex: 1; overflow-y: auto; max-height: 560px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; padding-right: 4px; }
+        .chat-msg { background: #fff; padding: 6px 10px; border-radius: 6px; word-break: break-all; border: 1px solid #ffe0b2; }
+        .chat-msg.system { background: #e1f5fe; border-color: #81d4fa; color: #0277bd; font-weight: bold; }
+        .chat-input-box { display: flex; gap: 4px; margin-top: 8px; }
+        .chat-input-box input { flex: 1; padding: 6px; border: 1px solid #f48fb1; border-radius: 4px; outline: none; }
+
+        #correct-overlay { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(76, 175, 80, 0.9); color: white; padding: 6px 16px; border-radius: 20px; font-weight: bold; display: none; z-index: 10; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen">
+        <h1 style="color: #d81b60;">🎨 Poki Party!</h1>
+        <input type="text" id="auth-username" class="input-box" placeholder="아이디">
+        <input type="password" id="auth-password" class="input-box" placeholder="비밀번호">
+        <input type="text" id="auth-nickname" class="input-box" placeholder="닉네임 (회원가입 시)">
+        <div style="display: flex; gap: 10px;">
+            <button class="btn" onclick="handleLogin()">로그인</button>
+            <button class="btn" style="background:#8e24aa;" onclick="handleRegister()">회원가입</button>
+        </div>
+    </div>
+
+    <div id="lobby-screen">
+        <div class="lobby-side">
+            <h3>👤 프로필</h3>
+            <div id="user-profile-info" style="font-size: 13px; line-height: 1.6;"></div>
+            <button class="btn" onclick="showCreateRoomModal()">➕ 방 만들기</button>
+            <button class="btn" style="background: #7cb342;" onclick="quickJoin()">⚡ 빠른 입장</button>
+        </div>
+        <div class="lobby-main">
+            <h3>🏠 게임 방 목록</h3>
+            <div id="room-grid" class="room-grid"></div>
+        </div>
+    </div>
+
+    <div id="game-room">
+        <div class="player-list">
+            <h4 style="text-align: center; color: #ad1457;">PLAYERS</h4>
+            <div id="game-player-list"></div>
+            <button id="start-game-btn" class="btn" style="background: #4caf50; display:none;" onclick="requestStartGame()">▶️ 게임 시작</button>
+        </div>
+
+        <div class="canvas-area">
+            <div id="timer-display" style="font-size: 18px; font-weight: bold; color: #d81b60;">⏳ 대기 중...</div>
+            <div id="word-display" style="font-size: 20px; font-weight: bold; color: #2e7d32;">제시어: ???</div>
+
+            <div id="canvas-wrapper">
+                <div id="correct-overlay">🎉 <span id="winner-name"></span> 님 정답!</div>
+                <canvas id="game-canvas" width="480" height="400"></canvas>
+            </div>
+
+            <div class="toolbar">
+                <div class="color-dot active" style="background: #000000;" onclick="setColor('#000000', this)"></div>
+                <div class="color-dot" style="background: #ff0000;" onclick="setColor('#ff0000', this)"></div>
+                <div class="color-dot" style="background: #ff7f00;" onclick="setColor('#ff7f00', this)"></div>
+                <div class="color-dot" style="background: #ffff00;" onclick="setColor('#ffff00', this)"></div>
+                <div class="color-dot" style="background: #00ff00;" onclick="setColor('#00ff00', this)"></div>
+                <div class="color-dot" style="background: #0000ff;" onclick="setColor('#0000ff', this)"></div>
+                <div class="color-dot" style="background: #4b0082;" onclick="setColor('#4b0082', this)"></div>
+                <div class="color-dot" style="background: #8b00ff;" onclick="setColor('#8b00ff', this)"></div>
+                <div class="color-dot" style="background: #ffffff;" onclick="setColor('#ffffff', this)"></div>
+
+                <button class="tool-btn active" id="size-2" onclick="setLineWidth(2, this)">✏️ 얇게</button>
+                <button class="tool-btn" id="size-6" onclick="setLineWidth(6, this)">✏️ 보통</button>
+                <button class="tool-btn" id="size-12" onclick="setLineWidth(12, this)">✏️ 두껍게</button>
+                <button class="tool-btn" onclick="setEraser(this)">🧹 지우개</button>
+                <button class="tool-btn" onclick="clearCanvasAction()">🗑️ 전체지우기</button>
+                <button class="tool-btn" style="background: #ff80ab; color: white;" onclick="leaveRoom()">🚪 나가기</button>
+            </div>
+        </div>
+
+        <div class="chat-area">
+            <div id="chat-messages" class="chat-messages"></div>
+            <div class="chat-input-box">
+                <input type="text" id="chat-input" placeholder="정답 또는 채팅 입력..." onkeypress="if(event.key==='Enter') sendChat()">
+                <button class="btn" style="padding: 6px 12px;" onclick="sendChat()">전송</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let currentColor = '#000000';
+        let currentLineWidth = 2;
+        let isDrawing = false;
+        let canDraw = false;
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+
+        function handleLogin() {
+            const username = document.getElementById('auth-username').value;
+            const password = document.getElementById('auth-password').value;
+            socket.emit('login', { username, password });
+        }
+
+        function handleRegister() {
+            const username = document.getElementById('auth-username').value;
+            const password = document.getElementById('auth-password').value;
+            const nickname = document.getElementById('auth-nickname').value;
+            socket.emit('register', { username, password, nickname });
+        }
+
+        socket.on('authError', msg => alert(msg));
+        socket.on('authSuccess', data => alert(data.message));
+
+        socket.on('loginSuccess', user => {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('lobby-screen').style.display = 'flex';
+            updateProfileUI(user);
+        });
+
+        function updateProfileUI(u) {
+            document.getElementById('user-profile-info').innerHTML = \`
+                <b>\${u.nickname}</b> (\${u.username})<br>
+                칭호: [\${u.equipped?.title || '신입'}]<br>
+                레벨: LV.\${u.level} | EXP: \${u.exp}<br>
+                포인트: 🪙 \${u.points}pt
+            \`;
+        }
+
+        socket.on('updateRoomList', rooms => {
+            const grid = document.getElementById('room-grid');
+            grid.innerHTML = '';
+            rooms.forEach(r => {
+                const card = document.createElement('div');
+                card.className = 'room-card';
+                card.onclick = () => socket.emit('joinRoom', { roomId: r.id, password: '' });
+                card.innerHTML = \`
+                    <b>#\${r.roomNum} \${r.title}</b> \${r.isLocked ? '🔒' : ''} \${r.isPlaying ? '[게임 중]' : ''}<br>
+                    <small>주제: <b>\${r.category.toUpperCase()}</b> | 인원: \${r.currentPlayers}/\${r.maxPlayers}</small>
+                \`;
+                grid.appendChild(card);
+            });
+        });
+
+        function showCreateRoomModal() {
+            const title = prompt("방 제목을 입력하세요:", "재미있는 그림 퀴즈!");
+            if (!title) return;
+            const category = prompt("카테고리를 선택하세요 (all, food, anime, meme, lol):", "all");
+            socket.emit('createRoom', { title, category: category ? category.toLowerCase() : 'all', maxPlayers: 6, roundTime: 60 });
+        }
+
+        function quickJoin() {
+            socket.emit('joinRoom', { roomId: 'quick', password: '' });
+        }
+
+        socket.on('joinError', msg => alert(msg));
+
+        socket.on('roomJoined', room => {
+            document.getElementById('lobby-screen').style.display = 'none';
+            document.getElementById('game-room').style.display = 'grid';
+        });
+
+        socket.on('leftRoom', () => {
+            document.getElementById('game-room').style.display = 'none';
+            document.getElementById('lobby-screen').style.display = 'flex';
+        });
+
+        function leaveRoom() { socket.emit('leaveRoom'); }
+        function requestStartGame() { socket.emit('requestStartGame'); }
+
+        socket.on('updatePlayers', ({ players, hostId, solvedPlayers = [], drawerId }) => {
+            const list = document.getElementById('game-player-list');
+            list.innerHTML = '';
+            
+            players.forEach(p => {
+                const card = document.createElement('div');
+                let className = 'player-card';
+                
+                if (p.id === drawerId) className += ' is-drawer';
+                else if (solvedPlayers.includes(p.id)) className += ' is-solved';
+
+                card.className = className;
+                const isHost = p.id === hostId ? ' 👑' : '';
+                const statusTag = p.id === drawerId ? ' 🎨' : (solvedPlayers.includes(p.id) ? ' ✅' : '');
+
+                card.innerHTML = \`<span>\${p.badge || ''}\${p.name}\${isHost}\${statusTag}</span><b>\${p.score}pt</b>\`;
+                list.appendChild(card);
+            });
+
+            document.getElementById('start-game-btn').style.display = (socket.id === hostId) ? 'block' : 'none';
+        });
+
+        socket.on('turnStart', ({ isDrawer, word, time }) => {
+            canDraw = isDrawer;
+            document.getElementById('word-display').innerText = \`제시어: \${word}\`;
+            document.getElementById('timer-display').innerText = \`⏳ 남은 시간: \${time}초\`;
+        });
+
+        socket.on('timerUpdate', time => {
+            document.getElementById('timer-display').innerText = \`⏳ 남은 시간: \${time}초\`;
+        });
+
+        socket.on('correctAnswerOverlay', ({ winner }) => {
+            const overlay = document.getElementById('correct-overlay');
+            document.getElementById('winner-name').innerText = winner;
+            overlay.style.display = 'block';
+            setTimeout(() => { overlay.style.display = 'none'; }, 2000);
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (!canDraw) return;
+            isDrawing = true;
+            draw(e.offsetX, e.offsetY, false);
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing || !canDraw) return;
+            draw(e.offsetX, e.offsetY, true);
+        });
+
+        canvas.addEventListener('mouseup', () => isDrawing = false);
+        canvas.addEventListener('mouseleave', () => isDrawing = false);
+
+        function draw(x, y, isDragging) {
+            const drawData = { x, y, isDragging, color: currentColor, width: currentLineWidth };
+            renderDraw(drawData);
+            socket.emit('draw', drawData);
+        }
+
+        function renderDraw({ x, y, isDragging, color, width }) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            if (!isDragging) {
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+                ctx.stroke();
+            }
+        }
+
+        socket.on('draw', renderDraw);
+        socket.on('loadCanvas', (canvasData) => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            canvasData.forEach(renderDraw);
+        });
+
+        socket.on('clearCanvas', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+
+        function clearCanvasAction() {
+            if (!canDraw) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            socket.emit('clearCanvas');
+        }
+
+        function setColor(color, el) {
+            currentColor = color;
+            document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+            if(el) el.classList.add('active');
+        }
+
+        function setLineWidth(width, el) {
+            currentLineWidth = width;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            if(el) el.classList.add('active');
+        }
+
+        function setEraser(el) {
+            currentColor = '#ffffff';
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            if(el) el.classList.add('active');
+        }
+
+        function sendChat() {
+            const input = document.getElementById('chat-input');
+            if (!input.value.trim()) return;
+            socket.emit('chatMessage', input.value);
+            input.value = '';
+        }
+
+        socket.on('chatMessage', ({ sender, text }) => {
+            const box = document.getElementById('chat-messages');
+            const msg = document.createElement('div');
+            msg.className = 'chat-msg' + (sender.includes('SYSTEM') ? ' system' : '');
+            msg.innerText = \`[\${sender}] \${text}\`;
+            box.appendChild(msg);
+            box.scrollTop = box.scrollHeight;
+        });
+    </script>
+</body>
+</html>
+    `;
+}
+
 server.listen(PORT, () => {
-console.log(`=================================================`);
-console.log(` Poki Party (ポキパティ！！) 서버 가동 성공!`);
-    console.log(` 점수 차등제 & 유저 DB 개인 포인트 연동 완료!`);
-    console.log(` 멀티플레이어 대기실 및 계정 동기화 버그 수정 완료!`);
-console.log(`=================================================`);
+    console.log(`=================================================`);
+    console.log(` Poki Party (wordsDB.json 연동 완료!) 실행 중 (Port: ${PORT})`);
+    console.log(`=================================================`);
 });
