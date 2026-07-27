@@ -43,34 +43,50 @@ function saveUsersDB(db) {
     try { fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf8'); } catch (e) {}
 }
 
+const DEFAULT_WORDS = {
+    food: ["떡볶이", "초밥", "피자", "치킨", "마라탕", "아이스크림"],
+    anime: ["피카츄", "나루토", "손오공", "도라에몽", "루피"],
+    meme: ["무야호", "어쩔티비", "중꺾마"],
+    lol: ["티모", "메이플스토리", "아리", "페이커"],
+    all: ["떡볶이", "초밥", "피자", "치킨", "마라탕", "아이스크림", "피카츄", "나루토", "손오공", "도라에몽", "루피", "무야호", "어쩔티비", "중꺾마", "티모", "메이플스토리", "아리", "페이커"]
+};
+
 function loadWordsDB() {
     try {
         if (!fs.existsSync(WORDS_PATH)) {
-            return { food: ["떡볶이", "초밥"], anime: ["피카츄", "나루토"], meme: ["무야호"], lol: ["티모", "메이플스토리"], all: ["떡볶이", "초밥", "피카츄", "나루토", "무야호", "티모"] };
+            return DEFAULT_WORDS;
         }
         const parsed = JSON.parse(fs.readFileSync(WORDS_PATH, 'utf8'));
         parsed.all = Array.from(new Set([...(parsed.food||[]), ...(parsed.anime||[]), ...(parsed.meme||[]), ...(parsed.lol||[])]));
+        if (!parsed.all || parsed.all.length === 0) return DEFAULT_WORDS;
         return parsed;
-    } catch (e) { return { food: [], anime: [], meme: [], lol: [], all: [] }; }
+    } catch (e) { return DEFAULT_WORDS; }
 }
 
 let usersDB = loadUsersDB();
 let wordsDB = loadWordsDB();
 
+// [v1.9.2 수정] undefined 버그 방지 강화 안전 제시어 추출 함수
 function getRandomWord(category, usedWords = []) {
     wordsDB = loadWordsDB();
-    let list = wordsDB[category] || wordsDB.all;
-    if (!list || list.length === 0) list = wordsDB.all;
-    let available = list.filter(w => !usedWords.includes(w));
-    if (available.length === 0) { available = list; usedWords.length = 0; }
+    let list = wordsDB[category] || wordsDB.all || DEFAULT_WORDS.all;
+    if (!list || list.length === 0) list = DEFAULT_WORDS.all;
+    
+    let available = list.filter(w => w && !usedWords.includes(w));
+    if (available.length === 0) { 
+        available = list; 
+        usedWords.length = 0; 
+    }
+    
     const selected = available[Math.floor(Math.random() * available.length)];
-    usedWords.push(selected);
-    return selected;
+    const finalWord = selected || "포키파티"; // 최종 방어코드
+    usedWords.push(finalWord);
+    return finalWord;
 }
 
-// 제시어 글자 수 힌트 변환 함수
+// [v1.9.2 수정] 제시어 글자 수 힌트 변환 함수 (undefined 방지)
 function getWordHintFormat(word) {
-    if (!word) return '???';
+    if (!word || typeof word !== 'string') return '???';
     const blanks = Array(word.length).fill('_').join(' ');
     return `${blanks} (${word.length}글자)`;
 }
@@ -234,13 +250,10 @@ io.on('connection', (socket) => {
             const player = room.players.find(p => p.id === socket.id);
             if (player) player.score += earnedScore;
 
-            // [v1.9.1] 정답 맞출 때 포인트 즉시 DB 반영
             usersDB = loadUsersDB();
             if (usersDB[player.username]) {
                 usersDB[player.username].points += earnedScore;
                 saveUsersDB(usersDB);
-                
-                // 포인트 업데이트 이벤트 전송
                 socket.emit('updateUserData', usersDB[player.username]);
             }
 
@@ -287,7 +300,7 @@ io.on('connection', (socket) => {
         if (currentUser.username && usersDB[currentUser.username]) {
             const updatedUser = usersDB[currentUser.username];
             lobbyUsers[socket.id] = { id: socket.id, username: currentUser.username, ...updatedUser };
-            socket.emit('updateUserData', updatedUser); // 로비 귀환 시 최신 유저 데이터 전송
+            socket.emit('updateUserData', updatedUser);
         }
         socket.emit('leftRoom');
         io.emit('updateLobbyUsers', Object.values(lobbyUsers));
@@ -325,13 +338,12 @@ function nextTurn(roomId) {
         room.isPlaying = false;
         const sorted = [...room.players].sort((a, b) => b.score - a.score);
         
-        // [v1.9.1] 게임 종료 보상 추가 보너스 포인트 적립
         usersDB = loadUsersDB();
         sorted.forEach((p, rank) => {
             let bonus = 0;
-            if (rank === 0) bonus = 3000;      // 1등 보너스
-            else if (rank === 1) bonus = 2000; // 2등 보너스
-            else if (rank === 2) bonus = 1000; // 3등 보너스
+            if (rank === 0) bonus = 3000;
+            else if (rank === 1) bonus = 2000;
+            else if (rank === 2) bonus = 1000;
             
             if (bonus > 0 && usersDB[p.username]) {
                 usersDB[p.username].points += bonus;
@@ -347,6 +359,7 @@ function nextTurn(roomId) {
     }
 
     const drawer = room.players[room.drawerIndex];
+    // [v1.9.2 수정] 제시어 안전 할당 보장
     room.currentWord = getRandomWord(room.category, room.usedWords);
     room.timeLeft = room.roundTime;
 
@@ -383,7 +396,7 @@ function getHTMLContent() {
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>ポキパティ！！ (Poki Party v1.9.1)</title>
+    <title>ポキパティ！！ (Poki Party v1.9.2)</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -520,7 +533,7 @@ function getHTMLContent() {
         <header class="game-header">
             <div class="game-logo">ポキパティ！！</div>
             <div class="header-center">
-                <span id="word-display" style="color:#a0ffb0;">제시어: ???</span>
+                <span id="word-display" style="color:#a0ffb0;">제시어: 대기 중...</span>
             </div>
             <div class="header-right">
                 <span id="round-display" style="color:#ffffff;">ROUND 1 / 3</span>
@@ -585,7 +598,7 @@ function getHTMLContent() {
 
     <div id="shop-modal" class="modal">
         <div class="modal-content" style="width: 420px; max-height: 550px;">
-            <h3 style="color: var(--dark-pink);">🛒 v1.9.1 포인트 상점</h3>
+            <h3 style="color: var(--dark-pink);">🛒 v1.9.2 포인트 상점</h3>
             <div style="display:flex; gap:10px; margin-bottom:6px;">
                 <button class="pixel-btn primary" onclick="renderShopCategory('badges')">뱃지 목록</button>
                 <button class="pixel-btn warning" onclick="renderShopCategory('colors')">닉네임 색상</button>
@@ -609,9 +622,9 @@ function getHTMLContent() {
         const canvas = document.getElementById('paint-canvas');
         const ctx = canvas.getContext('2d');
 
-        // [v1.9.1 수정] 팔레트 26색 - 중복 하늘색 -> 갈색(#8B4513) 교체 및 피색상(#CC0000) 수정
+        // [v1.9.2 수정] 중복 하늘색 -> 라임 그린(#A8E6CF)으로 최종 교체 완료!
         const PALETTE_COLORS = [
-            "#000000", "#555555", "#888888", "#ffffff", "#CC0000", "#ff5555", "#ff9900", "#ffcc00", "#22cc55", "#00bbf9", "#0055ff", "#9b5de5", "#f15bb5",
+            "#000000", "#555555", "#888888", "#ffffff", "#CC0000", "#ff5555", "#ff9900", "#ffcc00", "#22cc55", "#A8E6CF", "#0055ff", "#9b5de5", "#f15bb5",
             "#2b1424", "#8B4513", "#a0a0a0", "#d3d3d3", "#ffc0cb", "#ff85a2", "#ffb703", "#ffe66d", "#90be6d", "#43aa8b", "#4cc9f0", "#4895ef", "#7209b7"
         ];
 
@@ -663,7 +676,6 @@ function getHTMLContent() {
             showScreen('lobby-screen');
         });
 
-        // [v1.9.1] 유저 포인트/아이템 실시간 동기화 수신
         socket.on('updateUserData', user => {
             myUserData = user;
             updateProfileUI(user);
@@ -778,10 +790,9 @@ function getHTMLContent() {
 
         socket.on('joinError', msg => alert(msg));
         
-        // [v1.9.1 수정] 방 입장 및 생성 시 이전 대화/제시어 완전 초기화
         socket.on('roomJoined', () => {
             document.getElementById('chat-messages').innerHTML = '';
-            document.getElementById('word-display').innerText = '제시어: ???';
+            document.getElementById('word-display').innerText = '제시어: 대기 중...';
             document.getElementById('timer-display').innerText = '⏳ 대기 중...';
             document.getElementById('round-display').innerText = 'ROUND 1 / 3';
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -818,9 +829,11 @@ function getHTMLContent() {
             }
         });
 
+        // [v1.9.2 수정] undefined 표시 예외 방지 안전 출력
         socket.on('turnStart', ({ isDrawer, word, time, round, totalRounds }) => {
             canDraw = isDrawer;
-            document.getElementById('word-display').innerText = '제시어: ' + word;
+            const displayWord = word ? word : '대기 중...';
+            document.getElementById('word-display').innerText = '제시어: ' + displayWord;
             document.getElementById('timer-display').innerText = '⏳ 남은 시간: ' + time + '초';
             document.getElementById('round-display').innerText = 'ROUND ' + round + ' / ' + totalRounds;
         });
@@ -903,7 +916,7 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` Poki Party v1.9.1 Release Server Running!`);
+    console.log(` Poki Party v1.9.2 Hotfix Server Running!`);
     console.log(` Server running on Port: ${PORT}`);
     console.log(`=================================================`);
 });
