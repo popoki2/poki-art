@@ -68,6 +68,13 @@ function getRandomWord(category, usedWords = []) {
     return selected;
 }
 
+// 제시어 글자 수 힌트 변환 함수
+function getWordHintFormat(word) {
+    if (!word) return '???';
+    const blanks = Array(word.length).fill('_').join(' ');
+    return `${blanks} (${word.length}글자)`;
+}
+
 const rooms = {};
 const lobbyUsers = {};
 let roomCounter = 1;
@@ -227,10 +234,14 @@ io.on('connection', (socket) => {
             const player = room.players.find(p => p.id === socket.id);
             if (player) player.score += earnedScore;
 
+            // [v1.9.1] 정답 맞출 때 포인트 즉시 DB 반영
             usersDB = loadUsersDB();
             if (usersDB[player.username]) {
                 usersDB[player.username].points += earnedScore;
                 saveUsersDB(usersDB);
+                
+                // 포인트 업데이트 이벤트 전송
+                socket.emit('updateUserData', usersDB[player.username]);
             }
 
             io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: room.players[room.drawerIndex]?.id, isPlaying: room.isPlaying });
@@ -272,8 +283,11 @@ io.on('connection', (socket) => {
         }
 
         currentUser.roomId = null;
+        usersDB = loadUsersDB();
         if (currentUser.username && usersDB[currentUser.username]) {
-            lobbyUsers[socket.id] = { id: socket.id, username: currentUser.username, ...usersDB[currentUser.username] };
+            const updatedUser = usersDB[currentUser.username];
+            lobbyUsers[socket.id] = { id: socket.id, username: currentUser.username, ...updatedUser };
+            socket.emit('updateUserData', updatedUser); // 로비 귀환 시 최신 유저 데이터 전송
         }
         socket.emit('leftRoom');
         io.emit('updateLobbyUsers', Object.values(lobbyUsers));
@@ -310,9 +324,24 @@ function nextTurn(roomId) {
     if (room.currentRound > room.totalRounds) {
         room.isPlaying = false;
         const sorted = [...room.players].sort((a, b) => b.score - a.score);
+        
+        // [v1.9.1] 게임 종료 보상 추가 보너스 포인트 적립
+        usersDB = loadUsersDB();
+        sorted.forEach((p, rank) => {
+            let bonus = 0;
+            if (rank === 0) bonus = 3000;      // 1등 보너스
+            else if (rank === 1) bonus = 2000; // 2등 보너스
+            else if (rank === 2) bonus = 1000; // 3등 보너스
+            
+            if (bonus > 0 && usersDB[p.username]) {
+                usersDB[p.username].points += bonus;
+            }
+        });
+        saveUsersDB(usersDB);
+
         io.to(roomId).emit('gameOver', sorted);
         io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: [], drawerId: null, isPlaying: false });
-        io.to(roomId).emit('chatMessage', { sender: 'SYSTEM 🏆', text: `게임 종료! 1등: ${sorted[0]?.name || '없음'}님!` });
+        io.to(roomId).emit('chatMessage', { sender: 'SYSTEM 🏆', text: `게임 종료! 1등: ${sorted[0]?.name || '없음'}님! (우승 보너스 포인트 지급 완료)` });
         io.emit('updateRoomList', getPublicRoomList());
         return;
     }
@@ -321,12 +350,16 @@ function nextTurn(roomId) {
     room.currentWord = getRandomWord(room.category, room.usedWords);
     room.timeLeft = room.roundTime;
 
+    const hintText = getWordHintFormat(room.currentWord);
+
     io.to(roomId).emit('updatePlayers', { players: room.players, hostId: room.hostId, solvedPlayers: room.solvedPlayers, drawerId: drawer.id, isPlaying: room.isPlaying });
+    
+    // 출제자에게는 진짜 제시어, 맞히는 사람에게는 글자수 힌트전송!
     io.to(drawer.id).emit('turnStart', { isDrawer: true, word: room.currentWord, time: room.roundTime, round: room.currentRound, totalRounds: room.totalRounds });
 
     room.players.forEach(p => {
         if (p.id !== drawer.id) {
-            io.to(p.id).emit('turnStart', { isDrawer: false, word: '???', time: room.roundTime, round: room.currentRound, totalRounds: room.totalRounds });
+            io.to(p.id).emit('turnStart', { isDrawer: false, word: hintText, time: room.roundTime, round: room.currentRound, totalRounds: room.totalRounds });
         }
     });
 
@@ -350,9 +383,8 @@ function getHTMLContent() {
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>ポキパティ！！ (Poki Party v1.8.2)</title>
+    <title>ポキパティ！！ (Poki Party v1.9.1)</title>
 
-    <!-- [v1.8.2 구글 둥글둥글 귀여운 폰트] -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Jua&display=swap" rel="stylesheet">
@@ -430,7 +462,7 @@ function getHTMLContent() {
 </head>
 <body>
 
-    <!-- [1] Auth Screen (로그인/회원가입 폼 v1.8.2) -->
+    <!-- [1] Auth Screen -->
     <div id="auth-screen" class="screen active">
         <h1 class="pixel-title">ポキパティ！！</h1>
         <p class="pixel-subtitle">~ 포키의 놀이터 ~</p>
@@ -553,7 +585,7 @@ function getHTMLContent() {
 
     <div id="shop-modal" class="modal">
         <div class="modal-content" style="width: 420px; max-height: 550px;">
-            <h3 style="color: var(--dark-pink);">🛒 v1.8.2 포인트 상점</h3>
+            <h3 style="color: var(--dark-pink);">🛒 v1.9.1 포인트 상점</h3>
             <div style="display:flex; gap:10px; margin-bottom:6px;">
                 <button class="pixel-btn primary" onclick="renderShopCategory('badges')">뱃지 목록</button>
                 <button class="pixel-btn warning" onclick="renderShopCategory('colors')">닉네임 색상</button>
@@ -577,9 +609,10 @@ function getHTMLContent() {
         const canvas = document.getElementById('paint-canvas');
         const ctx = canvas.getContext('2d');
 
+        // [v1.9.1 수정] 팔레트 26색 - 중복 하늘색 -> 갈색(#8B4513) 교체 및 피색상(#CC0000) 수정
         const PALETTE_COLORS = [
-            "#000000", "#555555", "#888888", "#ffffff", "#ff0055", "#ff5555", "#ff9900", "#ffcc00", "#22cc55", "#00bbf9", "#0055ff", "#9b5de5", "#f15bb5",
-            "#2b1424", "#3d2b1f", "#a0a0a0", "#d3d3d3", "#ffc0cb", "#ff85a2", "#ffb703", "#ffe66d", "#90be6d", "#43aa8b", "#4cc9f0", "#4895ef", "#7209b7"
+            "#000000", "#555555", "#888888", "#ffffff", "#CC0000", "#ff5555", "#ff9900", "#ffcc00", "#22cc55", "#00bbf9", "#0055ff", "#9b5de5", "#f15bb5",
+            "#2b1424", "#8B4513", "#a0a0a0", "#d3d3d3", "#ffc0cb", "#ff85a2", "#ffb703", "#ffe66d", "#90be6d", "#43aa8b", "#4cc9f0", "#4895ef", "#7209b7"
         ];
 
         const paletteContainer = document.getElementById('palette-grid');
@@ -600,7 +633,6 @@ function getHTMLContent() {
             document.getElementById(id).classList.add('active');
         }
 
-        // [v1.8.2 클릭 및 로그인/회원가입 처리 완전 복구]
         document.getElementById('login-btn').addEventListener('click', function() {
             const username = document.getElementById('auth-username').value.trim();
             const password = document.getElementById('auth-password').value.trim();
@@ -616,7 +648,6 @@ function getHTMLContent() {
             socket.emit('register', { username, password, nickname });
         });
 
-        // 엔터키 지원
         ['auth-username', 'auth-password', 'auth-nickname'].forEach(id => {
             document.getElementById(id).addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') document.getElementById('login-btn').click();
@@ -632,11 +663,18 @@ function getHTMLContent() {
             showScreen('lobby-screen');
         });
 
+        // [v1.9.1] 유저 포인트/아이템 실시간 동기화 수신
+        socket.on('updateUserData', user => {
+            myUserData = user;
+            updateProfileUI(user);
+        });
+
         function updateProfileUI(user) {
-            const badge = (user && user.equipped && user.equipped.badge) ? user.equipped.badge : '🔰';
-            const color = (user && user.equipped && user.equipped.color) ? user.equipped.color : '#4a2840';
-            const nickname = (user && user.nickname) ? user.nickname : '익명';
-            const points = (user && user.points !== undefined) ? user.points.toLocaleString() : '0';
+            if (!user) return;
+            const badge = (user.equipped && user.equipped.badge) ? user.equipped.badge : '🔰';
+            const color = (user.equipped && user.equipped.color) ? user.equipped.color : '#4a2840';
+            const nickname = user.nickname ? user.nickname : '익명';
+            const points = (user.points !== undefined) ? user.points.toLocaleString() : '0';
 
             document.getElementById('user-profile-info').innerHTML = 
                 '<b>' + badge + ' <span style="color:' + color + '">' + nickname + '</span></b><br>' +
@@ -739,7 +777,17 @@ function getHTMLContent() {
         });
 
         socket.on('joinError', msg => alert(msg));
-        socket.on('roomJoined', () => showScreen('game-room'));
+        
+        // [v1.9.1 수정] 방 입장 및 생성 시 이전 대화/제시어 완전 초기화
+        socket.on('roomJoined', () => {
+            document.getElementById('chat-messages').innerHTML = '';
+            document.getElementById('word-display').innerText = '제시어: ???';
+            document.getElementById('timer-display').innerText = '⏳ 대기 중...';
+            document.getElementById('round-display').innerText = 'ROUND 1 / 3';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            showScreen('game-room');
+        });
+
         socket.on('leftRoom', () => showScreen('lobby-screen'));
 
         function leaveRoom() { socket.emit('leaveRoom'); }
@@ -855,7 +903,7 @@ function getHTMLContent() {
 
 server.listen(PORT, () => {
     console.log(`=================================================`);
-    console.log(` Poki Party v1.8.2 Click Fix Server Running!`);
+    console.log(` Poki Party v1.9.1 Release Server Running!`);
     console.log(` Server running on Port: ${PORT}`);
     console.log(`=================================================`);
 });
